@@ -21,9 +21,9 @@
 #include <supla/sensor/thermometer.h>
 #include <supla/tools.h>
 
-#include <climits>
-#include <cstdio>
-#include <cstring>
+#include <limits.h>
+#include <stdio.h>
+#include <string.h>
 
 namespace Supla {
 namespace Protocol {
