@@ -8,7 +8,7 @@ find_package(yaml-cpp REQUIRED)
 FetchContent_Declare(
   json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG v3.11.3
+  GIT_TAG v3.12.0
   GIT_SHALLOW TRUE
 )
 
@@ -125,4 +125,3 @@ function(supla_linux target_name)
     ${CMAKE_DL_LIBS}
   )
 endfunction()
-

@@ -2854,4 +2854,3 @@ void Mqtt::notifyConfigChange(int channelNumber) {
     configChangedBit[channelNumber / 8] |= (1 << (channelNumber % 8));
   }
 }
-
