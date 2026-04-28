@@ -27,6 +27,7 @@
 #include <supla/actions.h>
 #include <supla/control/hvac_base.h>
 #include <supla/protocol/mqtt.h>
+#include <supla/protocol/mqtt/hvac_mqtt.h>
 #include <supla/sensor/electricity_meter.h>
 #include <supla/sensor/therm_hygro_meter.h>
 #include <supla/sensor/thermometer.h>
@@ -98,6 +99,7 @@ void initMqtt(SuplaDeviceClass &sd, Supla::Protocol::Mqtt &mqtt) {
   sd.setName("My Device");
 
   mqtt.onInit();
+  Supla::Protocol::RegisterHvacMqttHandler();
 }
 
 std::string expectedChannelTopic(int channel, const char *suffix) {

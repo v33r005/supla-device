@@ -127,6 +127,7 @@ set(SUPLA_DEVICE_SRCS
   ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/protocol_layer.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/supla_srpc.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/mqtt.cpp
+  ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/mqtt/hvac_mqtt.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/mqtt_topic.cpp
 
   ${SUPLA_DEVICE_SRC_DIR}/supla/control/action_trigger.cpp

@@ -31,6 +31,7 @@
 #include <supla/channels/channel.h>
 #include <supla/storage/config_tags.h>
 #include <supla/protocol/protocol_layer.h>
+#include <supla/protocol/mqtt/hvac_mqtt.h>
 
 #include "output_interface.h"
 #include "relay_hvac_aggregator.h"
@@ -60,6 +61,7 @@ HvacBase::HvacBase(Supla::Control::OutputInterface *primaryOutput,
   setTemperatureAuxMax(7500);  // 75 degrees
   addAvailableAlgorithm(SUPLA_HVAC_ALGORITHM_ON_OFF_SETPOINT_MIDDLE);
   addAvailableAlgorithm(SUPLA_HVAC_ALGORITHM_ON_OFF_SETPOINT_AT_MOST);
+  Supla::Protocol::RegisterHvacMqttHandler();
 
   // default function is set in onInit based on supported modes or loaded from
   // config
@@ -6129,4 +6131,3 @@ int16_t HvacBase::getClosestValidTemperature(int16_t temperature) const {
 bool HvacBase::isHvacFlagForcedOffBySensor() const {
   return channel.isHvacFlagForcedOffBySensor();
 }
-
