@@ -18,12 +18,20 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <supla-common/proto.h>
 #include <supla/sensor/virtual_binary.h>
 #include <supla/sensor/binary.h>
 #include <simple_time.h>
 #include <arduino_mock.h>
 
 #include "../doubles/supla_io_mock.h"
+
+class BinaryConfigStub : public Supla::Sensor::BinaryBase {
+ public:
+  bool getValue() override {
+    return false;
+  }
+};
 
 TEST(BinarySensorTests, VirtualBinaryValuesTest) {
   Supla::Channel::resetToDefaults();
@@ -118,6 +126,47 @@ TEST(BinarySensorTests, VirtualBinaryCanDisableConfiguredTimeout) {
 
   EXPECT_TRUE(sensor.getChannel()->getValueBool());
   EXPECT_TRUE(sensor.getValue());
+}
+
+TEST(BinarySensorTests, BinaryConfigStoresAlarmMutedInChannelConfig) {
+  Supla::Channel::resetToDefaults();
+  BinaryConfigStub sensor;
+
+  ASSERT_TRUE(sensor.setAlarmMuted(2, false));
+
+  TChannelConfig_BinarySensor channelConfig = {};
+  int configSize = 0;
+
+  sensor.fillChannelConfig(&channelConfig,
+                           &configSize,
+                           SUPLA_CONFIG_TYPE_DEFAULT);
+
+  EXPECT_EQ(configSize, sizeof(TChannelConfig_BinarySensor));
+  EXPECT_EQ(channelConfig.AlarmMuted, 2);
+}
+
+TEST(BinarySensorTests, BinaryConfigAppliesAlarmMutedFromServer) {
+  Supla::Channel::resetToDefaults();
+  BinaryConfigStub sensor;
+
+  ASSERT_TRUE(sensor.setAlarmMuted(2, false));
+
+  TSD_ChannelConfig newConfig = {};
+  newConfig.ConfigSize = sizeof(TChannelConfig_BinarySensor);
+  newConfig.ConfigType = SUPLA_CONFIG_TYPE_DEFAULT;
+
+  auto serverConfig =
+      reinterpret_cast<TChannelConfig_BinarySensor *>(newConfig.Config);
+
+  serverConfig->AlarmMuted = 1;
+  EXPECT_EQ(sensor.applyChannelConfig(&newConfig, false),
+            Supla::ApplyConfigResult::Success);
+  EXPECT_EQ(sensor.getAlarmMuted(), 1);
+
+  serverConfig->AlarmMuted = 0;
+  EXPECT_EQ(sensor.applyChannelConfig(&newConfig, false),
+            Supla::ApplyConfigResult::SetChannelConfigNeeded);
+  EXPECT_EQ(sensor.getAlarmMuted(), 1);
 }
 
 TEST(BinarySensorTests, BinaryValuesTest) {
