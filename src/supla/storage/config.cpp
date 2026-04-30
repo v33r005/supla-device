@@ -145,7 +145,7 @@ bool Config::getSuplaServer(char* result) {
 int32_t Config::getSuplaServerPort() {
   int32_t result = -1;
   getInt32("suplaport", &result);
-  if (result <= 0 || result > 65536) {
+  if (result <= 0 || result > 65535) {
     result = -1;
   }
 
