@@ -844,7 +844,7 @@ bool SuplaDeviceClass::loadDeviceConfig() {
       }
       generateHexString(
           Supla::RegisterDevice::getAuthKey(), buf, SUPLA_AUTHKEY_SIZE);
-      SUPLA_LOG_DEBUG("New AuthKey: %s", buf);
+      SUPLA_LOG_DEBUG("New AuthKey generated");
       cfg->initDefaultDeviceConfig();
     } else {
       SUPLA_LOG_ERROR("Failed to generate GUID and AuthKey");
