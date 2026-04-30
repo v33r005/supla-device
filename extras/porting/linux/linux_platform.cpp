@@ -16,12 +16,11 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
 
+#include <openssl/rand.h>
 #include <supla/log_wrapper.h>
 #include <supla/tools.h>
 
 #include <cstdlib>
-
-#include <openssl/rand.h>
 
 void deviceSoftwareReset() {
   std::exit(1);
