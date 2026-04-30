@@ -118,7 +118,9 @@ int compareSemVer(const char *sw1, const char *sw2);
  * @param buffer
  * @param size
  */
+#ifndef ARDUINO_ARCH_AVR
 void fillRandom(uint8_t *buffer, int size);
+#endif
 
 }  // namespace Supla
 

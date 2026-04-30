@@ -114,8 +114,10 @@ class Config {
   virtual bool setCustomCA(const char* customCA);
   virtual bool getAESKey(uint8_t* result);
 
+#ifndef ARDUINO_ARCH_AVR
   static void generateSaltPassword(const char* password,
                                    Supla::SaltPassword* result);
+#endif
   virtual bool setCfgModeSaltPassword(const Supla::SaltPassword& saltPassword);
   virtual bool getCfgModeSaltPassword(Supla::SaltPassword* result);
 

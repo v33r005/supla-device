@@ -586,6 +586,7 @@ bool Config::isChannelConfigChangeFlagSet(int channelNo, int configType) {
   return false;
 }
 
+#ifndef ARDUINO_ARCH_AVR
 void Config::generateSaltPassword(const char* password,
                                   Supla::SaltPassword *result) {
   if (password == nullptr || result == nullptr) {
@@ -604,6 +605,7 @@ void Config::generateSaltPassword(const char* password,
                               result->passwordSha,
                               sizeof(result->passwordSha));
 }
+#endif  // !ARDUINO_ARCH_AVR
 
 bool Config::setCfgModeSaltPassword(const Supla::SaltPassword &saltPassword) {
   return setBlob("cfgpass", reinterpret_cast<const char*>(&saltPassword),

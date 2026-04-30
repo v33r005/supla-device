@@ -1295,8 +1295,12 @@ int SuplaDeviceClass::handleCalcfgFromServer(TSD_DeviceCalCfgRequest *request,
               "Password change failed: password is not strong enough");
           return SUPLA_CALCFG_RESULT_FALSE;
         }
+#ifndef ARDUINO_ARCH_AVR
         Supla::Config::generateSaltPassword(password->NewPassword,
                                             &saltPassword);
+#else
+        return SUPLA_CALCFG_RESULT_NOT_SUPPORTED;
+#endif
         cfg->setCfgModeSaltPassword(saltPassword);
         addSecurityLog(Supla::SecurityLogSource::REMOTE,
                        "Password successfully changed");

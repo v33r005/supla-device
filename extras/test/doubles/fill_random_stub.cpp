@@ -20,31 +20,7 @@
 #include <supla/tools.h>
 
 #include <cstdlib>
-
-#include <openssl/rand.h>
-
-void deviceSoftwareReset() {
-  std::exit(1);
-}
-
-bool isDeviceSoftwareResetSupported() {
-  return true;
-}
-
-bool isLastResetSoft() {
-  // TODO(klew): implement
-  return false;
-}
-
-bool Supla::isLastResetPower() {
-  // TODO(klew): implement
-  return false;
-}
-
-int Supla::getPlatformId() {
-  // TODO(klew): do we need platfom id for linux SW?
-  return 0;
-}
+#include <fstream>
 
 void Supla::fillRandom(uint8_t *buffer, int size) {
   if (buffer == nullptr || size <= 0) {
@@ -52,8 +28,15 @@ void Supla::fillRandom(uint8_t *buffer, int size) {
     std::exit(1);
   }
 
-  if (RAND_bytes(buffer, size) != 1) {
-    SUPLA_LOG_ERROR("fillRandom: OpenSSL RAND_bytes failed");
+  std::ifstream urandom("/dev/urandom", std::ios::in | std::ios::binary);
+  if (!urandom.is_open()) {
+    SUPLA_LOG_ERROR("fillRandom: failed to open /dev/urandom");
+    std::exit(1);
+  }
+
+  urandom.read(reinterpret_cast<char *>(buffer), size);
+  if (urandom.gcount() != size) {
+    SUPLA_LOG_ERROR("fillRandom: failed to read random bytes");
     std::exit(1);
   }
 }

@@ -62,12 +62,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <chrono>  // NOLINT(build/c++11)
 #include <cstring>
 #include <filesystem>  // NOLINT(build/c++17)
 #include <fstream>
 #include <map>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -254,19 +252,8 @@ bool Supla::LinuxYamlConfig::generateGuidAndAuthkey() {
   char guid[SUPLA_GUID_SIZE] = {};
   char authkey[SUPLA_AUTHKEY_SIZE] = {};
 
-  unsigned int randSeed = static_cast<unsigned int>(
-      std::chrono::system_clock::now().time_since_epoch().count());
-
-  std::mt19937 randGen(randSeed);
-  std::uniform_int_distribution<unsigned char> distribution(0, 255);
-
-  for (int i = 0; i < SUPLA_GUID_SIZE; i++) {
-    guid[i] = static_cast<char>(distribution(randGen));
-  }
-
-  for (int i = 0; i < SUPLA_AUTHKEY_SIZE; i++) {
-    authkey[i] = distribution(randGen);
-  }
+  Supla::fillRandom(reinterpret_cast<uint8_t *>(guid), SUPLA_GUID_SIZE);
+  Supla::fillRandom(reinterpret_cast<uint8_t *>(authkey), SUPLA_AUTHKEY_SIZE);
 
   if (isArrayEmpty(guid, SUPLA_GUID_SIZE)) {
     SUPLA_LOG_ERROR("Failed to generate GUID");
