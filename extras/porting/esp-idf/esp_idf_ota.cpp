@@ -387,7 +387,7 @@ void Supla::EspIdfOta::iterate() {
   configGet.user_agent = httpAgent;
   if (!skipCert && sdc && sdc->getSuplaCACert()) {
     SUPLA_LOG_INFO("SW update: using Supla CA cert");
-    configCheckUpdate.cert_pem = sdc->getSuplaCACert();
+    configGet.cert_pem = sdc->getSuplaCACert();
   }
   client = esp_http_client_init(&configGet);
   if (client == NULL) {
