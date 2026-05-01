@@ -55,6 +55,7 @@ enum HADeviceClass {
   HADeviceClass_ApparentPower,
   HADeviceClass_Current,
   HADeviceClass_Energy,
+  HADeviceClass_ReactiveEnergy,
   HADeviceClass_Frequency,
   HADeviceClass_PowerFactor,
   HADeviceClass_Power,

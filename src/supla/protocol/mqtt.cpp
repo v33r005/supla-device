@@ -2155,7 +2155,7 @@ void Supla::Protocol::Mqtt::publishHADiscoveryEM(Supla::Element *element) {
           "total_forward_reactive_energy",
           "kvarh",
           Supla::Protocol::HAStateClass_TotalIncreasing,
-          Supla::Protocol::HADeviceClass_Energy);
+          Supla::Protocol::HADeviceClass_ReactiveEnergy);
     }
 
     parameterId++;
@@ -2166,7 +2166,7 @@ void Supla::Protocol::Mqtt::publishHADiscoveryEM(Supla::Element *element) {
           "total_reverse_reactive_energy",
           "kvarh",
           Supla::Protocol::HAStateClass_TotalIncreasing,
-          Supla::Protocol::HADeviceClass_Energy);
+          Supla::Protocol::HADeviceClass_ReactiveEnergy);
     }
 
     parameterId++;
@@ -2301,6 +2301,8 @@ const char *Supla::Protocol::Mqtt::getDeviceClassStr(
   switch (deviceClass) {
     case HADeviceClass_Energy:
       return ",\"dev_cla\":\"energy\"";
+    case HADeviceClass_ReactiveEnergy:
+      return ",\"dev_cla\":\"reactive_energy\"";
     case HADeviceClass_ApparentPower:
       return ",\"dev_cla\":\"apparent_power\"";
     case HADeviceClass_Voltage:
