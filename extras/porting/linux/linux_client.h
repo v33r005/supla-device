@@ -41,6 +41,7 @@ class LinuxClient : public Client {
   int connectImp(const char *host, uint16_t port) override;
 
   bool checkSslCerts(SSL *ssl);
+  bool setupSslContext();
   int32_t printSslError(SSL *ssl, int ret_code);
 
   int connectionFd = -1;

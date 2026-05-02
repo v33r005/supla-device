@@ -138,8 +138,11 @@ void SolarEdge::iterateAlways() {
       SUPLA_LOG_DEBUG("Reading data from SolarEdge: %d", pvClient->available());
     }
     while (pvClient->available()) {
-      char c;
-      c = pvClient->read();
+      int readResult = pvClient->read();
+      if (readResult < 0) {
+        break;
+      }
+      char c = static_cast<char>(readResult);
       if (c == '\n') {
         if (bytesCounter > 0) {
           // new line is found with bytesCounter > 0 means that we have full
