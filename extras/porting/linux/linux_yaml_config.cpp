@@ -41,6 +41,7 @@
 #include <supla/payload/simple.h>
 #include <supla/pv/afore.h>
 #include <supla/pv/fronius.h>
+#include <supla/pv/solaredge.h>
 #include <supla/sensor/binary_parsed.h>
 #include <supla/sensor/container_parsed.h>
 #include <supla/sensor/distance_parsed.h>
@@ -59,6 +60,7 @@
 #include <supla/source/mqtt_src.h>
 #include <supla/source/source.h>
 #include <supla/tools.h>
+#include <SuplaDevice.h>
 
 #include <algorithm>
 #include <cmath>
@@ -652,6 +654,8 @@ bool Supla::LinuxYamlConfig::parseChannel(const YAML::Node& ch,
       return addRgbCctParsed(ch, channelNumber, parser);
     } else if (type == "Fronius") {
       return addFronius(ch, channelNumber);
+    } else if (type == "SolarEdge") {
+      return addSolarEdge(ch, channelNumber);
     } else if (type == "Afore") {
       return addAfore(ch, channelNumber);
     } else if (type == "Hvac") {
@@ -1001,6 +1005,64 @@ bool Supla::LinuxYamlConfig::addFronius(const YAML::Node& ch,
   }
 
   return true;
+}
+
+bool Supla::LinuxYamlConfig::addSolarEdge(const YAML::Node& ch,
+                                          int channelNumber) {
+  std::string apiKey;
+  std::string siteId;
+  std::string inverterSerialNumber;
+
+  if (ch["api_key"]) {
+    paramCount++;
+    apiKey = ch["api_key"].as<std::string>();
+  } else {
+    SUPLA_LOG_ERROR(
+        "Channel[%d] config: missing mandatory \"api_key\" parameter",
+        channelNumber);
+    return false;
+  }
+
+  if (ch["site_id"]) {
+    paramCount++;
+    siteId = ch["site_id"].as<std::string>();
+  } else {
+    SUPLA_LOG_ERROR(
+        "Channel[%d] config: missing mandatory \"site_id\" parameter",
+        channelNumber);
+    return false;
+  }
+
+  if (ch["inverter_serial_number"]) {
+    paramCount++;
+    inverterSerialNumber = ch["inverter_serial_number"].as<std::string>();
+  } else {
+    SUPLA_LOG_ERROR("Channel[%d] config: missing mandatory "
+                    "\"inverter_serial_number\" parameter",
+                    channelNumber);
+    return false;
+  }
+
+  auto clock = SuplaDevice.getClock();
+  if (!clock) {
+    SUPLA_LOG_ERROR(
+        "Channel[%d] config: SolarEdge requires a configured clock",
+        channelNumber);
+    return false;
+  }
+
+  SUPLA_LOG_INFO(
+      "Channel[%d] config: adding SolarEdge with site_id %s, inverter "
+      "serial %s",
+      channelNumber,
+      siteId.c_str(),
+      inverterSerialNumber.c_str());
+
+  auto solarEdge = new Supla::PV::SolarEdge(apiKey.c_str(),
+                                            siteId.c_str(),
+                                            inverterSerialNumber.c_str(),
+                                            clock);
+  return addCommonParameters(ch, solarEdge);
 }
 
 bool Supla::LinuxYamlConfig::addAfore(const YAML::Node& ch, int channelNumber) {

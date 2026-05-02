@@ -32,8 +32,9 @@
 // #define SUPLA_ALLOW_INSECURE_EXTERNAL_TLS
 
 #include <supla/version.h>
+#include <Arduino.h>
 #include <ArduinoJson.h>
-#include <WiFiClientSecure.h>
+#include <supla/network/client.h>
 #include <supla/protocol/weathersender.h>
 
 // Certificate for https://aqi.eco (LetsEncrypt)
@@ -79,6 +80,12 @@ class AQIECO : public Supla::Protocol::WeatherSender {
   explicit AQIECO(Supla::Network* _network, char token[], int refresh = 180,
     char server[] = "api.aqi.eco", int id = 0)
   : Supla::Protocol::WeatherSender(_network) {
+    client = Supla::ClientBuilder();
+    client->setSSLEnabled(true);
+#if !defined(SUPLA_ALLOW_INSECURE_EXTERNAL_TLS)
+    client->setCACert(LETS_ENCRYPT_CA_CERT);
+#endif
+
     // serverAddress
     strncpy(serverAddress, server, 32);
     serverAddress[32] = 0;
@@ -108,6 +115,11 @@ class AQIECO : public Supla::Protocol::WeatherSender {
     } else {
       sensorId = id;
     }
+  }
+
+  ~AQIECO() {
+    delete client;
+    client = nullptr;
   }
 
   bool sendData() override {
@@ -177,39 +189,33 @@ class AQIECO : public Supla::Protocol::WeatherSender {
     serializeJson(json, output, 768);
     SUPLA_LOG_DEBUG("aqi.eco: JSON: %s", output);
 
-    WiFiClientSecure client;
-#if SUPLA_ALLOW_INSECURE_EXTERNAL_TLS
-     client.setInsecure();
-#else
-     client.setCACert(LETS_ENCRYPT_CA_CERT);
-#endif
-    if (client.connect(serverAddress, 443)) {
-      client.print("POST /update/");
-      client.print(apiToken);
-      client.println(" HTTP/1.1");
-      client.print("Host: ");
-      client.println(serverAddress);
-      client.println("Content-Type: application/json");
-      client.print("Content-Length: ");
-      client.println(strlen(output));
-      client.println();
-      client.println(output);
+    if (client->connect(serverAddress, 443)) {
+      client->print("POST /update/");
+      client->print(apiToken);
+      client->println(" HTTP/1.1");
+      client->print("Host: ");
+      client->println(serverAddress);
+      client->println("Content-Type: application/json");
+      client->print("Content-Length: ");
+      client->println(strlen(output));
+      client->println();
+      client->println(output);
 
       SUPLA_LOG_DEBUG("aqi.eco: sended %d bytes to %s/update/%s",
         strlen(output), serverAddress, apiToken);
 
       // waiting for response
       delay(100);
-      if (!client.available()) {
+      if (!client->available()) {
         SUPLA_LOG_DEBUG("aqi.eco: no bytes to read from %s", serverAddress);
         return false;
       }
       SUPLA_LOG_DEBUG("aqi.eco: reading from %s: %d bytes",
-        serverAddress, client.available());
+        serverAddress, client->available());
 
-      output[client.available()] = 0;
-      for (int i=0; client.available(); i++) {
-        output[i] = client.read();
+      output[client->available()] = 0;
+      for (int i=0; client->available(); i++) {
+        output[i] = client->read();
         if (output[i] == '\n') {
           output[i] = 0;
         }
@@ -221,6 +227,7 @@ class AQIECO : public Supla::Protocol::WeatherSender {
   }
 
  private:
+  ::Supla::Client *client = nullptr;
   char apiToken[33];
   char serverAddress[33];
   uint32_t sensorId = 0;

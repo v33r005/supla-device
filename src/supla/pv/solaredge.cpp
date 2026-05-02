@@ -23,43 +23,41 @@
 #include <time.h>
 
 #include <supla/log_wrapper.h>
+#include <supla/time.h>
 
 // Allow insecure external TLS (not recommended)
 // #define SUPLA_ALLOW_INSECURE_EXTERNAL_TLS
 
 #define TEMPERATURE_NOT_AVAILABLE -275.0
 
+#ifndef PROGMEM
+#define PROGMEM
+#endif
+
 // Certificate for https://api.solaredge.com
-// Valid until 2030-09-23
+// DigiCert Global Root CA
 static const char SOLAREDGE_CA_CERT[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
-MIIE9DCCA9ygAwIBAgIQCF+UwC2Fe+jMFP9T7aI+KjANBgkqhkiG9w0BAQsFADBh
+MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh
 MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
-d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH
-MjAeFw0yMDA5MjQwMDAwMDBaFw0zMDA5MjMyMzU5NTlaMFkxCzAJBgNVBAYTAlVT
-MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxMzAxBgNVBAMTKkRpZ2lDZXJ0IEdsb2Jh
-bCBHMiBUTFMgUlNBIFNIQTI1NiAyMDIwIENBMTCCASIwDQYJKoZIhvcNAQEBBQAD
-ggEPADCCAQoCggEBAMz3EGJPprtjb+2QUlbFbSd7ehJWivH0+dbn4Y+9lavyYEEV
-cNsSAPonCrVXOFt9slGTcZUOakGUWzUb+nv6u8W+JDD+Vu/E832X4xT1FE3LpxDy
-FuqrIvAxIhFhaZAmunjZlx/jfWardUSVc8is/+9dCopZQ+GssjoP80j812s3wWPc
-3kbW20X+fSP9kOhRBx5Ro1/tSUZUfyyIxfQTnJcVPAPooTncaQwywa8WV0yUR0J8
-osicfebUTVSvQpmowQTCd5zWSOTOEeAqgJnwQ3DPP3Zr0UxJqyRewg2C/Uaoq2yT
-zGJSQnWS+Jr6Xl6ysGHlHx+5fwmY6D36g39HaaECAwEAAaOCAa4wggGqMB0GA1Ud
-DgQWBBR0hYDAZsffN97PvSk3qgMdvu3NFzAfBgNVHSMEGDAWgBROIlQgGJXm427m
-D/r6uRLtBhePOTAOBgNVHQ8BAf8EBAMCAYYwHQYDVR0lBBYwFAYIKwYBBQUHAwEG
-CCsGAQUFBwMCMBIGA1UdEwEB/wQIMAYBAf8CAQAwdgYIKwYBBQUHAQEEajBoMCQG
-CCsGAQUFBzABhhhodHRwOi8vb2NzcC5kaWdpY2VydC5jb20wQAYIKwYBBQUHMAKG
-NGh0dHA6Ly9jYWNlcnRzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEdsb2JhbFJvb3RH
-Mi5jcnQwewYDVR0fBHQwcjA3oDWgM4YxaHR0cDovL2NybDMuZGlnaWNlcnQuY29t
-L0RpZ2lDZXJ0R2xvYmFsUm9vdEcyLmNybDA3oDWgM4YxaHR0cDovL2NybDQuZGln
-aWNlcnQuY29tL0RpZ2lDZXJ0R2xvYmFsUm9vdEcyLmNybDAwBgNVHSAEKTAnMAcG
-BWeBDAEBMAgGBmeBDAECATAIBgZngQwBAgIwCAYGZ4EMAQIDMA0GCSqGSIb3DQEB
-CwUAA4IBAQB1i8A8W+//cFxrivUh76wx5kM9gK/XVakew44YbHnT96xC34+IxZ20
-dfPJCP2K/lHz8p0gGgQ1zvi2QXmv/8yWXpTTmh1wLqIxi/ulzH9W3xc3l7/BjUOG
-q4xmfrnti/EPjLXUVa9ciZ7gpyptsqNjMhg7y961n4OzEQGsIA2QlxK3KZw1tdeR
-Du9Ab21cO72h2fviyy52QNI6uyy/FgvqvQNbTpg6Ku0FUAcVkzxzOZGUWkgOxtNK
-Aa9mObm9QjQc2wgD80D8EuiuPKuK1ftyeWSm4w5VsTuVP61gM2eKrLanXPDtWlIb
-1GHhJRLmB7WqlLLwKPZhJl5VHPgB63dx
+d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD
+QTAeFw0wNjExMTAwMDAwMDBaFw0zMTExMTAwMDAwMDBaMGExCzAJBgNVBAYTAlVT
+MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j
+b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG
+9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4jvhEXLeqKTTo1eqUKKPC3eQyaKl7hLOllsB
+CSDMAZOnTjC3U/dDxGkAV53ijSLdhwZAAIEJzs4bg7/fzTtxRuLWZscFs3YnFo97
+nh6Vfe63SKMI2tavegw5BmV/Sl0fvBf4q77uKNd0f3p4mVmFaG5cIzJLv07A6Fpt
+43C/dxC//AH2hdmoRBBYMql1GNXRor5H4idq9Joz+EkIYIvUX7Q6hL+hqkpMfT7P
+T19sdl6gSzeRntwi5m3OFBqOasv+zbMUZBfHWymeMr/y7vrTC0LUq7dBMtoM1O/4
+gdW7jVg/tRvoSSiicNoxBN33shbyTApOB6jtSj1etX+jkMOvJwIDAQABo2MwYTAO
+BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUA95QNVbR
+TLtm8KPiGxvDl7I90VUwHwYDVR0jBBgwFoAUA95QNVbRTLtm8KPiGxvDl7I90VUw
+DQYJKoZIhvcNAQEFBQADggEBAMucN6pIExIK+t1EnE9SsPTfrgT1eXkIoyQY/Esr
+hMAtudXH/vTBH1jLuG2cenTnmCmrEbXjcKChzUyImZOMkXDiqw8cvpOp/2PV5Adg
+06O/nVsJ8dWO41P0jmP6P6fbtGbfYmbW0W5BjfIttep3Sp+dWOIrWcBAI+0tKIJF
+PnlUkiaY4IBIqDfv8NZ5YBberOgOzW6sRBc4L0na4UU+Krk2U886UAb3LujEV0ls
+YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk
+CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=
 -----END CERTIFICATE-----
 )EOF";
 
@@ -83,6 +81,12 @@ SolarEdge::SolarEdge(const char *apiKeyValue,
                      const char *inverterSerialNumberValue,
                      Supla::Clock *clock)
     : clock(clock) {
+  pvClient = Supla::ClientBuilder();
+  pvClient->setSSLEnabled(true);
+#if !defined(SUPLA_ALLOW_INSECURE_EXTERNAL_TLS)
+  pvClient->setCACert(SOLAREDGE_CA_CERT);
+#endif
+
   // SolarEdge api allows 300 requests daily, so it is one request per almost 5
   // min
   refreshRateSec = 6 * 60;  // refresh every 6 min
@@ -110,35 +114,39 @@ SolarEdge::SolarEdge(const char *apiKeyValue,
   temperatureChannel.setNewValue(TEMPERATURE_NOT_AVAILABLE);
 }
 
+SolarEdge::~SolarEdge() {
+  delete pvClient;
+  pvClient = nullptr;
+}
+
 void SolarEdge::iterateAlways() {
   if (dataFetchInProgress) {
     if (millis() - connectionTimeoutMs > 30000) {
       SUPLA_LOG_DEBUG(
           "SolarEdge: connection timeout. Remote host is not responding");
-      pvClient.stop();
+      pvClient->stop();
       dataFetchInProgress = false;
       dataIsReady = false;
       return;
     }
-    if (!pvClient.connected()) {
+    if (!pvClient->connected()) {
       SUPLA_LOG_DEBUG("SolarEdge fetch completed");
       dataFetchInProgress = false;
       dataIsReady = true;
     }
-    if (pvClient.available()) {
-      SUPLA_LOG_DEBUG("Reading data from SolarEdge: %d", pvClient.available());
+    if (pvClient->available()) {
+      SUPLA_LOG_DEBUG("Reading data from SolarEdge: %d", pvClient->available());
     }
-    while (pvClient.available()) {
+    while (pvClient->available()) {
       char c;
-      c = pvClient.read();
-      SUPLA_LOG_VERBOSE("%c", c);
+      c = pvClient->read();
       if (c == '\n') {
         if (bytesCounter > 0) {
           // new line is found with bytesCounter > 0 means that we have full
           // received line of data in buf
           buf[bytesCounter] =
               '\0';  // add null character at the end of received string
-
+          SUPLA_LOG_VERBOSE("Received line: %s", buf);
           if (!headerFound) {
             if (0 == strncmp(headerVerification,
                              buf,
@@ -307,8 +315,8 @@ void SolarEdge::iterateAlways() {
         bytesCounter++;
       }
     }
-    if (!pvClient.connected()) {
-      pvClient.stop();
+    if (!pvClient->connected()) {
+      pvClient->stop();
     }
   }
   if (dataIsReady) {
@@ -348,15 +356,7 @@ bool SolarEdge::iterateConnected() {
               (retryCounter > 0 ? 5000 : refreshRateSec * 1000)) {
         lastReadTime = millis();
         SUPLA_LOG_DEBUG("SolarEdge connecting");
-#ifdef ARDUINO_ARCH_ESP8266
-        pvClient.setBufferSizes(2048, 512);  //
-#endif
-#if SUPLA_ALLOW_INSECURE_EXTERNAL_TLS
-        pvClient.setInsecure();
-#else
-        pvClient.setCACert(SOLAREDGE_ROOT_CA);
-#endif
-        int returnCode = pvClient.connect("monitoringapi.solaredge.com", 443);
+        int returnCode = pvClient->connect("monitoringapi.solaredge.com", 443);
         if (returnCode) {
           retryCounter = 0;
           dataFetchInProgress = true;
@@ -402,16 +402,16 @@ bool SolarEdge::iterateConnected() {
                                   apiKey);
           if (queryLen < 0 || queryLen >= static_cast<int>(sizeof(query))) {
             SUPLA_LOG_ERROR("SolarEdge query buffer overflow");
-            pvClient.stop();
+            pvClient->stop();
             dataFetchInProgress = false;
             return Element::iterateConnected();
           }
 
           SUPLA_LOG_VERBOSE("SolarEdge query: %s", query);
-          pvClient.println(query);
-          pvClient.println(F("Host: localhost"));
-          pvClient.println(F("Connection: close"));
-          pvClient.println();
+          pvClient->println(query);
+          pvClient->println(F("Host: localhost"));
+          pvClient->println(F("Connection: close"));
+          pvClient->println();
 
         } else {  // if connection wasn't successful, try few times
           SUPLA_LOG_DEBUG("Failed to connect to SolarEdge api, return code: %d",

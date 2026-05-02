@@ -175,6 +175,9 @@ int main(int argc, char* argv[]) {
 
     st_hook_signals();
 
+    auto clock = std::make_unique<Supla::LinuxClock>();
+    (void)(clock);
+
     if (!config->loadChannels()) {
       SUPLA_LOG_ERROR("Loading channels failed. Exit");
       exit(1);
@@ -185,9 +188,6 @@ int main(int argc, char* argv[]) {
     SuplaDevice.setLastStateLogger(
         new Supla::Device::FileStateLogger(config->getStateFilesPath()));
     Supla::LinuxNetwork network;
-
-    auto clock = std::make_unique<Supla::LinuxClock>();
-    (void)(clock);
 
     SuplaDevice.begin(config->getProtoVersion());
 

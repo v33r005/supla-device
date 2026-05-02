@@ -28,6 +28,13 @@ class SuplaDeviceClass;
 
 namespace Supla {
 
+#ifndef ARDUINO
+#ifdef F
+#undef F
+#endif
+#define F(argument_F) (argument_F)
+#endif
+
 class Client {
  public:
   Client();
@@ -46,6 +53,10 @@ class Client {
 
   size_t print(const char *);
   size_t println(const char *);
+#ifdef ARDUINO
+  size_t print(const ::__FlashStringHelper *);
+  size_t println(const ::__FlashStringHelper *);
+#endif
   size_t println();
 
   int read();

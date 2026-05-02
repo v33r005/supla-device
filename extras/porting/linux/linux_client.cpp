@@ -31,6 +31,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/x509_vfy.h>
+
 #include "linux_client.h"
 
 Supla::LinuxClient::LinuxClient() {
@@ -64,7 +68,7 @@ int Supla::LinuxClient::connectImp(const char *server, uint16_t port) {
   for (struct addrinfo *addr = addresses; addr != nullptr;
        addr = addr->ai_next) {
     connectionFd = socket(
-        addresses->ai_family, addresses->ai_socktype, addresses->ai_protocol);
+        addr->ai_family, addr->ai_socktype, addr->ai_protocol);
     if (connectionFd == -1) {
       err = errno;
       continue;
@@ -133,7 +137,29 @@ int Supla::LinuxClient::connectImp(const char *server, uint16_t port) {
       }
       if (rootCACert) {
         SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, nullptr);
-        // TODO(klew): add custom root CA verification
+        BIO *caBio = BIO_new_mem_buf(rootCACert, -1);
+        if (caBio == nullptr) {
+          SUPLA_LOG_ERROR("Failed to create CA BIO");
+          stop();
+          return 0;
+        }
+
+        X509 *caCert = PEM_read_bio_X509(caBio, nullptr, 0, nullptr);
+        BIO_free(caBio);
+        if (caCert == nullptr) {
+          SUPLA_LOG_ERROR("Failed to read CA certificate");
+          stop();
+          return 0;
+        }
+
+        X509_STORE *store = SSL_CTX_get_cert_store(ctx);
+        if (store == nullptr || X509_STORE_add_cert(store, caCert) != 1) {
+          SUPLA_LOG_ERROR("Failed to add CA certificate to SSL context");
+          X509_free(caCert);
+          stop();
+          return 0;
+        }
+        X509_free(caCert);
       }
     }
     ssl = SSL_new(ctx);
@@ -143,7 +169,18 @@ int Supla::LinuxClient::connectImp(const char *server, uint16_t port) {
       return 0;
     }
     SSL_set_fd(ssl, connectionFd);
-    SSL_connect(ssl);
+    SSL_set_tlsext_host_name(ssl, server);
+    int ret = SSL_connect(ssl);
+    if (ret <= 0) {
+      printSslError(ssl, ret);
+      if (rootCACert) {
+        SUPLA_LOG_WARNING("SSL verify result: %s",
+                          X509_verify_cert_error_string(
+                              SSL_get_verify_result(ssl)));
+      }
+      stop();
+      return 0;
+    }
 
     SUPLA_LOG_DEBUG("Connected with %s encryption", SSL_get_cipher(ssl));
     SSL_get_cipher(ssl);
@@ -189,7 +226,7 @@ size_t Supla::LinuxClient::writeImp(const uint8_t *buf, size_t size) {
     }
 
   } else {
-    int result = ::write(connectionFd, buf, size);
+    result = ::write(connectionFd, buf, size);
     if (result < 0) {
       stop();
     }
@@ -322,9 +359,16 @@ void Supla::LinuxClient::setTimeoutMs(uint16_t _timeoutMs) {
 bool Supla::LinuxClient::checkSslCerts(SSL *ssl) {
   X509 *cert = nullptr;
   char *line;
+  const int64_t verifyResult = SSL_get_verify_result(ssl);
 
   cert = SSL_get_peer_certificate(ssl);
   if (cert != NULL) {
+    if (rootCACert && verifyResult != X509_V_OK) {
+      SUPLA_LOG_WARNING("Failed to verify server certificate: %s",
+                        X509_verify_cert_error_string(verifyResult));
+      X509_free(cert);
+      return false;
+    }
     SUPLA_LOG_DEBUG("Server certificates:");
     line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
     SUPLA_LOG_DEBUG("Subject: %s", line);
@@ -375,10 +419,16 @@ int32_t Supla::LinuxClient::printSslError(SSL *ssl, int ret_code) {
       break;
   }
 
+  uint64_t err = 0;
+  while ((err = ERR_get_error()) != 0) {
+    char errBuf[256] = {};
+    ERR_error_string_n(err, errBuf, sizeof(errBuf));
+    SUPLA_LOG_ERROR("OpenSSL: %s", errBuf);
+  }
+
   return ssl_error;
 }
 
 Supla::Client *Supla::ClientBuilder() {
   return new Supla::LinuxClient;
 }
-

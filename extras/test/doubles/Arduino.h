@@ -33,6 +33,10 @@ typedef std::string String;
 #define HIGH 1
 #define LOW 0
 
+#ifndef PROGMEM
+#define PROGMEM
+#endif
+
 
 #ifndef F
 #define F(string_literal) string_literal

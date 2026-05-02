@@ -106,6 +106,12 @@ size_t Supla::Client::println(const char *str) {
   return dataSend;
 }
 
+#ifdef ARDUINO
+size_t Supla::Client::println(const ::__FlashStringHelper *str) {
+  return println(reinterpret_cast<const char *>(str));
+}
+#endif
+
 size_t Supla::Client::print(const char *str) {
   int size = strlen(str);
   int response = 0;
@@ -118,6 +124,12 @@ size_t Supla::Client::print(const char *str) {
 
   return response;
 }
+
+#ifdef ARDUINO
+size_t Supla::Client::print(const ::__FlashStringHelper *str) {
+  return print(reinterpret_cast<const char *>(str));
+}
+#endif
 
 void Supla::Client::setSSLEnabled(bool enabled) {
   sslEnabled = enabled;

@@ -35,6 +35,11 @@ channels:
     device_id: 0
     device_type: 2
 
+  - type: SolarEdge
+    api_key: your_api_key
+    site_id: your_site_id
+    inverter_serial_number: your_inverter_serial_number
+
   - type: ThermometerParsed
     name: t1
     temperature: 0

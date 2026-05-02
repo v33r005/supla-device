@@ -101,6 +101,7 @@ add_library(supladevicelib SHARED)
 supla_device(supladevicelib)
 target_sources(supladevicelib PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/doubles/fill_random_stub.cpp
+  ${SUPLA_DEVICE_SRC_DIR}/supla/pv/solaredge.cpp
 )
 
 target_include_directories(supladevicelib PUBLIC

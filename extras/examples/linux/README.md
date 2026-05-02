@@ -303,6 +303,7 @@ Supported channel types:
 * `CmdValve` - related class `Supla::Control::CmdValve`
 * `CmdRollerShutter` - related class `Supla::Control::CmdRollerShutter`
 * `Fronius` - related class `Supla::PV::Fronius`
+* `SolarEdge` - related class `Supla::PV::SolarEdge`
 * `Afore` - related class `Supla::PV::Afore`
 * `ThermometerParsed` - related class `Supla::Sensor::ThermometerParsed`
 * `ThermHygroMeterParsed` - related class `Supla::Sensor::ThermHygroMeterParsed`
@@ -373,6 +374,12 @@ Example channels configuration (details are exaplained later):
         port: 80
         device_id: 0
         device_type: 2
+
+    # SolarEdge inverter
+      - type: SolarEdge
+        api_key: your_api_key
+        site_id: your_site_id
+        inverter_serial_number: your_inverter_serial_number
 
       - type: Afore
         ip: 192.168.1.17
