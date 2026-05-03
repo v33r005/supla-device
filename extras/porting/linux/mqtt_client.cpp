@@ -23,6 +23,7 @@
 #include <supla/network/client.h>
 #include <supla/time.h>
 #include <unistd.h>
+#include <openssl/bio.h>
 
 #include <atomic>
 #include <cstdio>
@@ -45,7 +46,6 @@ struct reconnect_state_t* reconnect_state;
 int delay_time = 5;
 void reconnect_client(struct mqtt_client* client, void** reconnect_state_vptr);
 
-#include <openssl/bio.h>
 
 struct SuplaMqttBio {
   Supla::Client* client = nullptr;
@@ -115,9 +115,9 @@ int supla_mqtt_bio_write(BIO* bio, const char* in, int inl) {
   return 0;
 }
 
-long supla_mqtt_bio_ctrl(BIO* bio,     // NOLINT(runtime/int)
+long supla_mqtt_bio_ctrl(BIO* bio,  // NOLINT(runtime/int)
                          int cmd,
-                         long num,     // NOLINT(runtime/int)
+                         long num,  // NOLINT(runtime/int)
                          void* ptr) {
   (void)(bio);
   (void)(num);
