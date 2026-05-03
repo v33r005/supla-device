@@ -45,7 +45,7 @@ int Supla::Client::connect(IPAddress ip, uint16_t port) {
 
 int Supla::Client::connect(const char *host, uint16_t port) {
   if (sslEnabled) {
-    if (rootCACert == nullptr) {
+    if (!isCertificateValidationEnabled()) {
       SUPLA_LOG_WARNING(
               "Connecting without certificate validation (INSECURE)");
     }
@@ -137,6 +137,10 @@ void Supla::Client::setSSLEnabled(bool enabled) {
 
 void Supla::Client::setCACert(const char *rootCA) {
   rootCACert = rootCA;
+}
+
+bool Supla::Client::isCertificateValidationEnabled() const {
+  return rootCACert != nullptr;
 }
 
 int Supla::Client::read() {

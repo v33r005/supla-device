@@ -34,8 +34,10 @@ class LinuxClient : public Client {
   uint8_t connected() override;
 
   void setTimeoutMs(uint16_t timeoutMs) override;
+  void setUseDefaultCACerts(bool useDefault);
 
  protected:
+  bool isCertificateValidationEnabled() const override;
   int readImp(uint8_t *buf, size_t size) override;
   size_t writeImp(const uint8_t *buf, size_t size) override;
   int connectImp(const char *host, uint16_t port) override;
@@ -48,6 +50,7 @@ class LinuxClient : public Client {
   SSL_CTX *ctx = nullptr;
   SSL *ssl = nullptr;
   uint16_t timeoutMs = 3000;
+  bool useDefaultCACerts = false;
 };
 };  // namespace Supla
 

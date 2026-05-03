@@ -36,6 +36,11 @@ Supla::LinuxMqttClient::LinuxMqttClient(
     : useSSL(yamlConfig.getMqttClientUseSSL()),
       verifyCA(yamlConfig.getMqttClientVerifyCA()),
       port(yamlConfig.getMqttClientPort()) {
+  if (!useSSL && port == 8883) {
+    SUPLA_LOG_WARNING("MQTT: enabling TLS because broker port is 8883");
+    useSSL = true;
+  }
+
   char buffer[256];
   host = yamlConfig.getMqttClientHost(buffer) ? buffer : "";
   if (!yamlConfig.getMqttClientName(buffer)) {
@@ -87,6 +92,10 @@ void Supla::LinuxMqttClient::subscribeTopic(const std::string& topic, int qos) {
 
 void Supla::LinuxMqttClient::unsubscribeTopic(const std::string& topic) {
   topics.erase(topic);
+  if (mq_client == nullptr || mq_client->reconnect_state == nullptr) {
+    return;
+  }
+
   auto reconnect_state =
       static_cast<reconnect_state_t*>(mq_client->reconnect_state);
   reconnect_state->topics.erase(topic);
@@ -135,4 +144,3 @@ enum MQTTErrors Supla::LinuxMqttClient::publish(const std::string& topic,
                       payload.size(),
                       qos);
 }
-

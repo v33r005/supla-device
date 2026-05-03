@@ -74,6 +74,7 @@ class Client {
   uint32_t getSrcConnectionIPAddress() const;
 
  protected:
+  virtual bool isCertificateValidationEnabled() const;
   virtual int connectImp(const char *host, uint16_t port) = 0;
   virtual size_t writeImp(const uint8_t *buf, size_t size) = 0;
   virtual int readImp(uint8_t *buf, size_t size) = 0;

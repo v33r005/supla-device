@@ -60,12 +60,22 @@ bool Supla::LinuxClient::setupSslContext() {
     return false;
   }
 
-  if (rootCACert == nullptr) {
+  if (rootCACert == nullptr && !useDefaultCACerts) {
     SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nullptr);
     return true;
   }
 
   SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, nullptr);
+  if (rootCACert == nullptr) {
+    if (SSL_CTX_set_default_verify_paths(ctx) != 1) {
+      SUPLA_LOG_ERROR("Failed to load default CA certificates");
+      SSL_CTX_free(ctx);
+      ctx = nullptr;
+      return false;
+    }
+    return true;
+  }
+
   BIO *caBio = BIO_new_mem_buf(rootCACert, -1);
   if (caBio == nullptr) {
     SUPLA_LOG_ERROR("Failed to create CA BIO");
@@ -257,7 +267,7 @@ int Supla::LinuxClient::connectImp(const char *server, uint16_t port) {
       stop();
       return 0;
     }
-    if (rootCACert && SSL_set1_host(ssl, server) != 1) {
+    if (isCertificateValidationEnabled() && SSL_set1_host(ssl, server) != 1) {
       SUPLA_LOG_ERROR("SSL_set1_host failed");
       stop();
       return 0;
@@ -265,7 +275,7 @@ int Supla::LinuxClient::connectImp(const char *server, uint16_t port) {
     int ret = SSL_connect(ssl);
     if (ret <= 0) {
       printSslError(ssl, ret);
-      if (rootCACert) {
+      if (isCertificateValidationEnabled()) {
         SUPLA_LOG_WARNING("SSL verify result: %s",
                           X509_verify_cert_error_string(
                               SSL_get_verify_result(ssl)));
@@ -569,6 +579,14 @@ void Supla::LinuxClient::setTimeoutMs(uint16_t _timeoutMs) {
   timeoutMs = _timeoutMs;
 }
 
+void Supla::LinuxClient::setUseDefaultCACerts(bool useDefault) {
+  useDefaultCACerts = useDefault;
+}
+
+bool Supla::LinuxClient::isCertificateValidationEnabled() const {
+  return rootCACert != nullptr || useDefaultCACerts;
+}
+
 bool Supla::LinuxClient::checkSslCerts(SSL *ssl) {
   X509 *cert = nullptr;
   char *line;
@@ -576,7 +594,7 @@ bool Supla::LinuxClient::checkSslCerts(SSL *ssl) {
 
   cert = SSL_get_peer_certificate(ssl);
   if (cert != NULL) {
-    if (rootCACert && verifyResult != X509_V_OK) {
+    if (isCertificateValidationEnabled() && verifyResult != X509_V_OK) {
       SUPLA_LOG_WARNING("Failed to verify server certificate: %s",
                         X509_verify_cert_error_string(verifyResult));
       X509_free(cert);
