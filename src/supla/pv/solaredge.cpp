@@ -393,7 +393,7 @@ bool SolarEdge::iterateConnected() {
                    timeinfo.tm_mon + 1,
                    timeinfo.tm_mday);
 
-          char query[200];
+          char query[512];
           int queryLen = snprintf(query,
                                   sizeof(query),
                                   "GET /equipment/%s/%s/data.csv?startTime=%s"
