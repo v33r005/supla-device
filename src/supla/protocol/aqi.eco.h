@@ -210,16 +210,26 @@ class AQIECO : public Supla::Protocol::WeatherSender {
         SUPLA_LOG_DEBUG("aqi.eco: no bytes to read from %s", serverAddress);
         return false;
       }
+      int responseLength = client->available();
       SUPLA_LOG_DEBUG("aqi.eco: reading from %s: %d bytes",
-        serverAddress, client->available());
+        serverAddress, responseLength);
 
-      output[client->available()] = 0;
-      for (int i=0; client->available(); i++) {
-        output[i] = client->read();
+      if (responseLength >= static_cast<int>(sizeof(output))) {
+        responseLength = sizeof(output) - 1;
+      }
+
+      for (int i = 0; i < responseLength; i++) {
+        int responseChar = client->read();
+        if (responseChar < 0) {
+          output[i] = 0;
+          break;
+        }
+        output[i] = static_cast<char>(responseChar);
         if (output[i] == '\n') {
           output[i] = 0;
         }
       }
+      output[responseLength] = 0;
       SUPLA_LOG_DEBUG("aqi.eco: response from %s: %s", serverAddress, output);
       return true;
     }
