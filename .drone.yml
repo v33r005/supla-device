@@ -42,6 +42,7 @@ steps:
   pull: never
   commands:
   - cd extras/test/build
+  - ulimit -n 8192
   - valgrind --error-exitcode=1 --leak-check=full ./supladevicetests
   - valgrind --error-exitcode=1 --leak-check=full ./sd4linuxtests
   depends_on:
