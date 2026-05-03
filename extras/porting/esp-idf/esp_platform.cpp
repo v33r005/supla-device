@@ -17,6 +17,7 @@
  */
 
 #include <esp_system.h>
+#include <esp_random.h>
 #ifdef SUPLA_DEVICE_ESP32
 #include <esp_chip_info.h>
 #endif
