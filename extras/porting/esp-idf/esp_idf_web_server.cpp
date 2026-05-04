@@ -638,14 +638,15 @@ bool Supla::EspIdfWebServer::handlePost(httpd_req_t *req, bool beta) {
 
   while (contentLen > 0) {
     ret = httpd_req_recv(req, content, recvSize);
+    if (ret <= 0) {
+      SUPLA_LOG_WARNING("SERVER: failed to receive POST chunk: %d", ret);
+      contentLen = 0;
+      break;
+    }
     content[ret] = '\0';
     SUPLA_LOG_DEBUG(
         "SERVER: received %d B (cl %d): %s", ret, contentLen, content);
     contentLen -= ret;
-    if (ret <= 0) {
-      contentLen = 0;
-      break;
-    }
 
     parsePost(content, ret, (contentLen == 0));
 

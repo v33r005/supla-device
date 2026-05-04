@@ -185,7 +185,7 @@ void Supla::WebServer::parsePost(const char *postContent,
   }
 
   const char *startPtr = postContent;
-  const char *endPtr = &postContent[size + 1];
+  const char *endPtr = &postContent[size];
 
   for (auto ptr = startPtr; ptr != endPtr; ptr++) {
     if (!keyFound && ((*ptr) == '=' || (ptr + 1) == endPtr)) {
