@@ -39,6 +39,7 @@ namespace {
 constexpr char BinaryTimeoutKey[] = "bs_timeout";
 constexpr char BinarySensitivityKey[] = "bs_sens";
 constexpr char BinaryFilterKey[] = "bs_filter";
+constexpr char BinaryAlarmMutedKey[] = "bs_alarm";
 }  // namespace
 
 BinarySensorParameters::BinarySensorParameters(
@@ -145,6 +146,24 @@ void BinarySensorParameters::send(Supla::WebSender* sender) {
             input.finish();
           });
     }
+
+    if (binary->getAlarmMuted() > 0) {
+      Supla::Config::generateKey(key,
+                                 binary->getChannelNumber(),
+                                 BinaryAlarmMutedKey);
+
+      sender->labeledField(
+          key,
+          "Alarm muted",
+          [&]() {
+            sender->selectInput(key, key, [&]() {
+              sender->selectOption(1, "Muted", binary->getAlarmMuted() == 1);
+              sender->selectOption(2,
+                                   "Not muted",
+                                   binary->getAlarmMuted() == 2);
+            });
+          });
+    }
   }
 }
 
@@ -203,6 +222,20 @@ bool BinarySensorParameters::handleResponse(const char* key,
     uint32_t param = floatStringToInt(value, 3);
     if (binary->getFilteringTimeMs() > 0 && param < 10000) {
       if (binary->setFilteringTimeMs(param)) {
+        configChanged = true;
+      }
+    }
+    return true;
+  }
+
+  Supla::Config::generateKey(
+      expectedKey,
+      binary->getChannelNumber(),
+      BinaryAlarmMutedKey);
+  if (strcmp(key, expectedKey) == 0) {
+    uint32_t param = stringToInt(value);
+    if (binary->getAlarmMuted() > 0 && param >= 1 && param <= 2) {
+      if (binary->setAlarmMuted(static_cast<uint8_t>(param))) {
         configChanged = true;
       }
     }

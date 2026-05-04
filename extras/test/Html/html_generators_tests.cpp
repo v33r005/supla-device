@@ -162,10 +162,11 @@ class PwmFrequencyStub : public Supla::Control::LightingPwmBase {
 class BinarySensorStub : public Supla::Sensor::BinaryBase {
  public:
   BinarySensorStub() {
-    setServerInvertLogic(true, true);
-    setFilteringTimeMs(2500, true);
-    setTimeoutDs(42, true);
-    setSensitivity(12, true);
+    setServerInvertLogic(true, false);
+    setFilteringTimeMs(2500, false);
+    setTimeoutDs(42, false);
+    setSensitivity(12, false);
+    setAlarmMuted(2, false);
   }
 
   bool getValue() override {
@@ -1069,6 +1070,25 @@ TEST_F(HtmlCaptureTest, BinarySensorParametersRendersFields) {
   EXPECT_THAT(sendHtml, HasSubstr("Filtering time [s]"));
   EXPECT_THAT(sendHtml, HasSubstr("Sensor timeout [s]"));
   EXPECT_THAT(sendHtml, HasSubstr("Sensor sensitivity [%]"));
+  EXPECT_THAT(sendHtml, HasSubstr("Alarm muted"));
+  EXPECT_THAT(sendHtml, HasSubstr("Muted"));
+  EXPECT_THAT(sendHtml, HasSubstr("Not muted"));
+}
+
+TEST_F(HtmlCaptureTest, BinarySensorParametersHandleResponseStoresAlarmMuted) {
+  NiceMock<ConfigMock> cfg;
+  Supla::Channel::resetToDefaults();
+  BinarySensorStub binary;
+
+  Supla::Html::BinarySensorParameters param(&binary);
+
+  char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+  Supla::Config::generateKey(key, binary.getChannelNumber(), "bs_alarm");
+
+  EXPECT_TRUE(param.handleResponse(key, "1"));
+  EXPECT_EQ(binary.getAlarmMuted(), 1);
+
+  param.onProcessingEnd();
 }
 
 TEST_F(HtmlCaptureTest, ScreenDelayTypeParametersRendersSelectedOption) {
