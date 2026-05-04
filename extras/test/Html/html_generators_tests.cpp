@@ -1339,6 +1339,40 @@ TEST_F(HtmlCaptureTest, HvacParametersRendersBasicThermostatFields) {
   EXPECT_THAT(sendHtml, HasSubstr("value=\"25.0\""));
 }
 
+TEST_F(HtmlCaptureTest, HvacParametersUsesUniqueAuxSectionIdsPerChannel) {
+  NiceMock<ConfigMock> cfg;
+  SenderMock sender;
+  OutputSimulatorWithCheck output1;
+  OutputSimulatorWithCheck output2;
+  sendHtml.clear();
+
+  EXPECT_CALL(sender, send(_, _))
+      .WillRepeatedly(
+          [this](const char* data, int size) { appendSentHtml(data, size); });
+
+  Supla::Control::HvacBase hvac1(&output1);
+  Supla::Control::HvacBase hvac2(&output2);
+
+  Supla::Html::HvacParameters param1(&hvac1);
+  Supla::Html::HvacParameters param2(&hvac2);
+
+  param1.send(&sender);
+  param2.send(&sender);
+
+  EXPECT_THAT(sendHtml, HasSubstr("id=\"0_aux_box\""));
+  EXPECT_THAT(sendHtml, HasSubstr("id=\"1_aux_box\""));
+  EXPECT_THAT(sendHtml, HasSubstr("function auxSetpointEnabledChange_0()"));
+  EXPECT_THAT(sendHtml, HasSubstr("function auxSetpointEnabledChange_1()"));
+  EXPECT_THAT(sendHtml, HasSubstr("id=\"0_af_box\""));
+  EXPECT_THAT(sendHtml, HasSubstr("id=\"1_af_box\""));
+  EXPECT_THAT(
+      sendHtml,
+      HasSubstr("function antiFreezeAndHeatProtectionChange_0()"));
+  EXPECT_THAT(
+      sendHtml,
+      HasSubstr("function antiFreezeAndHeatProtectionChange_1()"));
+}
+
 TEST_F(HtmlCaptureTest, ContainerParametersRendersBasicFields) {
   NiceMock<ConfigMock> cfg;
   SenderMock sender;
