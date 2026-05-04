@@ -113,38 +113,47 @@ int generateHexString(const void *input,
   return destIdx;
 }
 
-void hexStringToArray(const char *input, char *output, int outputLength) {
-  for (int i = 0; i < outputLength; i++) {
-    output[i] = hexStringToInt(input + 2*i, 2);
+static bool hexCharToNibble(char hexChar, uint8_t *result) {
+  if (hexChar >= 'A' && hexChar <= 'F') {
+    *result = static_cast<uint8_t>(hexChar - 'A' + 10);
+    return true;
   }
-  return;
+  if (hexChar >= 'a' && hexChar <= 'f') {
+    *result = static_cast<uint8_t>(hexChar - 'a' + 10);
+    return true;
+  }
+  if (hexChar >= '0' && hexChar <= '9') {
+    *result = static_cast<uint8_t>(hexChar - '0');
+    return true;
+  }
+  return false;
 }
 
-uint32_t hexStringToInt(const char *str, int len) {
-  if (len == -1) {
-    len = strlen(str);
+bool hexByteToInt(const char *str, uint8_t *result) {
+  if (str == nullptr || result == nullptr) {
+    return false;
   }
 
-  uint32_t result = 0;
-
-  for (int i = 0; i < len; i++) {
-    if (i) {
-      result <<= 4;
-    }
-    uint32_t n = 0;
-
-    if (str[i] >= 'A' && str[i] <= 'F') {
-      n = str[i] - 55;
-    } else if (str[i] >= 'a' && str[i] <= 'f') {
-      n = str[i] - 87;
-    } else if (str[i] >= '0' && str[i] <= '9') {
-      n = str[i] - 48;
-    }
-
-    result += n;
+  uint8_t high = 0;
+  uint8_t low = 0;
+  if (!hexCharToNibble(str[0], &high) || !hexCharToNibble(str[1], &low)) {
+    return false;
   }
 
-  return result;
+  *result = static_cast<uint8_t>((high << 4) | low);
+  return true;
+}
+
+bool hexStringToArray(const char *input, char *output, int outputLength) {
+  for (int i = 0; i < outputLength; i++) {
+    uint8_t value = 0;
+    if (!hexByteToInt(input + 2 * i, &value)) {
+      output[i] = 0;
+      return false;
+    }
+    output[i] = static_cast<char>(value);
+  }
+  return true;
 }
 
 uint32_t stringToUInt(const char *str, int len) {
@@ -198,7 +207,7 @@ int32_t stringToInt(const char *str, int len) {
   return minusFound ? -result : result;
 }
 
-void urlDecodeInplace(char *buffer, int size) {
+bool urlDecodeInplace(char *buffer, int size) {
   auto insertPtr = buffer;
   auto parserPtr = buffer;
   auto endPtr = &buffer[size];
@@ -208,7 +217,11 @@ void urlDecodeInplace(char *buffer, int size) {
     } else if (*parserPtr == '%') {
       parserPtr++;  // skip '%'
       if (parserPtr + 1 < endPtr) {
-        *insertPtr = static_cast<char>(hexStringToInt(parserPtr, 2));
+        uint8_t decoded = 0;
+        if (!hexByteToInt(parserPtr, &decoded)) {
+          return false;
+        }
+        *insertPtr = static_cast<char>(decoded);
         parserPtr++;  // there are 2 bytes, so we shift one here
                       // decode %HEX
       } else {
@@ -224,6 +237,7 @@ void urlDecodeInplace(char *buffer, int size) {
     parserPtr++;
   }
   *insertPtr = '\0';
+  return true;
 }
 
 int urlEncode(const char *input, char *output, int outputMaxSize) {
@@ -621,4 +635,3 @@ int Supla::compareSemVer(const char *sw1, const char *sw2) {
 
   return 0;
 }
-

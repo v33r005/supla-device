@@ -413,8 +413,7 @@ bool Supla::LinuxYamlConfig::setGUID(const char* guidRaw) {
 
 bool Supla::LinuxYamlConfig::getGUID(char* result) {
   if (guid.length()) {
-    hexStringToArray(guid.c_str(), result, SUPLA_GUID_SIZE);
-    return true;
+    return hexStringToArray(guid.c_str(), result, SUPLA_GUID_SIZE);
   }
   return false;
 }
@@ -428,8 +427,7 @@ bool Supla::LinuxYamlConfig::setAuthKey(const char* authkeyRaw) {
 
 bool Supla::LinuxYamlConfig::getAuthKey(char* result) {
   if (authkey.length()) {
-    hexStringToArray(authkey.c_str(), result, SUPLA_AUTHKEY_SIZE);
-    return true;
+    return hexStringToArray(authkey.c_str(), result, SUPLA_AUTHKEY_SIZE);
   }
   return false;
 }
