@@ -14,6 +14,7 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
+#include <limits.h>
 #include <gtest/gtest.h>
 #include <supla/tools.h>
 
@@ -344,6 +345,18 @@ TEST(ToolsTests, stringToIntTests) {
   EXPECT_EQ(stringToInt("-1234"), -1234);
   EXPECT_EQ(stringToInt("1234"), 1234);
   EXPECT_EQ(stringToInt("-1-"), 0);
+  EXPECT_EQ(stringToInt("2147483647"), 2147483647);
+  EXPECT_EQ(stringToInt("2147483648"), 0);
+  EXPECT_EQ(stringToInt("-2147483648"), INT32_MIN);
+  EXPECT_EQ(stringToInt("-2147483649"), 0);
+}
+
+TEST(ToolsTests, stringToUIntTests) {
+  EXPECT_EQ(stringToUInt("0"), 0U);
+  EXPECT_EQ(stringToUInt("10"), 10U);
+  EXPECT_EQ(stringToUInt("4294967295"), UINT32_MAX);
+  EXPECT_EQ(stringToUInt("4294967296"), 0U);
+  EXPECT_EQ(stringToUInt("12a3"), 0U);
 }
 
 TEST(ToolsTests, stringToColorTests) {

@@ -20,6 +20,7 @@
 #include <string.h>
 #include <supla-common/proto.h>
 #include <ctype.h>
+#include <limits.h>
 
 #if defined(ARDUINO_ARCH_AVR)
 #include <stdlib.h>
@@ -33,6 +34,7 @@
 #include <esp_random.h>
 #endif
 
+#include <supla/log_wrapper.h>
 #include "supla/IEEE754tools.h"
 
 void float2DoublePacked(float number, uint8_t *bar, int byteOrder) {
@@ -161,20 +163,23 @@ uint32_t stringToUInt(const char *str, int len) {
     len = strlen(str);
   }
 
-  uint32_t result = 0;
+  uint64_t result = 0;
+  const uint64_t maxValue = UINT32_MAX;
 
   for (int i = 0; i < len; i++) {
     if (str[i] < '0' || str[i] > '9') {
+      SUPLA_LOG_ERROR("stringToUInt: invalid character");
       return 0;
     }
-    if (i) {
-      result *= 10;
+    uint8_t digit = static_cast<uint8_t>(str[i] - '0');
+    if (result > (maxValue - digit) / 10) {
+      SUPLA_LOG_ERROR("stringToUInt: overflow");
+      return 0;
     }
-
-    result += static_cast<uint8_t>(str[i]-'0');
+    result = result * 10 + digit;
   }
 
-  return result;
+  return static_cast<uint32_t>(result);
 }
 
 int32_t stringToInt(const char *str, int len) {
@@ -182,8 +187,9 @@ int32_t stringToInt(const char *str, int len) {
     len = strlen(str);
   }
 
-  int32_t result = 0;
   bool minusFound = false;
+  uint64_t result = 0;
+  const uint64_t maxValue = static_cast<uint64_t>(INT32_MAX) + 1;
 
   for (int i = 0; i < len; i++) {
     if (str[i] == '-') {
@@ -191,20 +197,31 @@ int32_t stringToInt(const char *str, int len) {
         minusFound = true;
         continue;
       } else {
+        SUPLA_LOG_ERROR("stringToInt: invalid minus position");
         return 0;
       }
     }
     if (str[i] < '0' || str[i] > '9') {
+      SUPLA_LOG_ERROR("stringToInt: invalid character");
       return 0;
     }
-    if (i) {
-      result *= 10;
+    uint8_t digit = static_cast<uint8_t>(str[i] - '0');
+    uint64_t signedLimit = minusFound ? maxValue : INT32_MAX;
+    if (result > (signedLimit - digit) / 10) {
+      SUPLA_LOG_ERROR("stringToInt: overflow");
+      return 0;
     }
-
-    result += static_cast<uint8_t>(str[i]-'0');
+    result = result * 10 + digit;
   }
 
-  return minusFound ? -result : result;
+  if (minusFound) {
+    if (result == maxValue) {
+      return INT32_MIN;
+    }
+    return -static_cast<int32_t>(result);
+  }
+
+  return static_cast<int32_t>(result);
 }
 
 bool urlDecodeInplace(char *buffer, int size) {
