@@ -97,8 +97,6 @@ class AQIECO : public Supla::Protocol::WeatherSender {
     } else {
       apiToken[0] = 0;
     }
-    SUPLA_LOG_DEBUG("aqi.eco: token: %s", apiToken);
-
     // refreshTime
     if (refresh < 120) {
       refreshTime = 120;
@@ -124,7 +122,8 @@ class AQIECO : public Supla::Protocol::WeatherSender {
 
   bool sendData() override {
     if (strlen(apiToken) != 32) {
-      SUPLA_LOG_DEBUG("aqi.eco: wrong token length: %s", apiToken);
+      SUPLA_LOG_DEBUG("aqi.eco: expected token length 32, got %d",
+                      static_cast<int>(strlen(apiToken)));
       return false;
     }
 
