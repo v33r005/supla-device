@@ -60,6 +60,13 @@ bool Supla::LinuxClient::setupSslContext() {
     return false;
   }
 
+  if (SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION) != 1) {
+    SUPLA_LOG_ERROR("Failed to set minimum TLS version");
+    SSL_CTX_free(ctx);
+    ctx = nullptr;
+    return false;
+  }
+
   if (rootCACert == nullptr && !useDefaultCACerts) {
     SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nullptr);
     return true;
@@ -284,7 +291,8 @@ int Supla::LinuxClient::connectImp(const char *server, uint16_t port) {
       return 0;
     }
 
-    SUPLA_LOG_DEBUG("Connected with %s encryption", SSL_get_cipher(ssl));
+    SUPLA_LOG_DEBUG("TLS version: %s", SSL_get_version(ssl));
+    SUPLA_LOG_DEBUG("Cipher suite: %s", SSL_get_cipher(ssl));
     if (!checkSslCerts(ssl)) {
       stop();
       return 0;
