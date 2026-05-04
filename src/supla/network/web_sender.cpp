@@ -369,21 +369,11 @@ void WebSender::sendNameAndId(const char *id) {
 }
 
 void WebSender::sendLabelFor(const char *id, const char *label) {
-  char buf[300];
-  int size = snprintf(buf,
-                      sizeof(buf),
-                      "<label for=\"%s\">%s</label>",
-                      id ? id : "",
-                      label ? label : "");
-  if (size < 0) {
-    SUPLA_LOG_WARNING("WebSender error - snprintf failed");
-    return;
-  }
-  if (static_cast<size_t>(size) > sizeof(buf)) {
-    SUPLA_LOG_WARNING("WebSender error - buffer too small");
-    return;
-  }
-  send(buf);
+  send("<label for=\"");
+  sendSafe(id ? id : "");
+  send("\">");
+  sendSafe(label ? label : "");
+  send("</label>");
 }
 
 void WebSender::sendSafe(const char *buf, int size) {
@@ -429,30 +419,38 @@ void WebSender::sendSelectItem(int value,
                                bool selected,
                                bool emptyValue) {
   char buf[100];
-  int size = 0;
   if (emptyValue) {
-    size = snprintf(buf,
-                    sizeof(buf),
-                    "<option value=\"\" %s>%s</option>",
-                    selected ? "selected" : "",
-                    label);
+    int size = snprintf(buf,
+                        sizeof(buf),
+                        "<option value=\"\" %s>",
+                        selected ? "selected" : "");
+    if (size < 0) {
+      SUPLA_LOG_WARNING("WebSender error - snprintf failed");
+      return;
+    }
+    if (static_cast<size_t>(size) > sizeof(buf)) {
+      SUPLA_LOG_WARNING("WebSender error - buffer too small");
+      return;
+    }
+    send(buf);
   } else {
-    size = snprintf(buf,
-                    sizeof(buf),
-                    "<option value=\"%d\" %s>%s</option>",
-                    value,
-                    selected ? "selected" : "",
-                    label);
+    int size = snprintf(buf,
+                        sizeof(buf),
+                        "<option value=\"%d\" %s>",
+                        value,
+                        selected ? "selected" : "");
+    if (size < 0) {
+      SUPLA_LOG_WARNING("WebSender error - snprintf failed");
+      return;
+    }
+    if (static_cast<size_t>(size) > sizeof(buf)) {
+      SUPLA_LOG_WARNING("WebSender error - buffer too small");
+      return;
+    }
+    send(buf);
   }
-  if (size < 0) {
-    SUPLA_LOG_WARNING("WebSender error - snprintf failed");
-    return;
-  }
-  if (static_cast<size_t>(size) > sizeof(buf)) {
-    SUPLA_LOG_WARNING("WebSender error - buffer too small");
-    return;
-  }
-  send(buf);
+  sendSafe(label ? label : "");
+  send("</option>");
 }
 
 void WebSender::sendHidden(bool hidden) {

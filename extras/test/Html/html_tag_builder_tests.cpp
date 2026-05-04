@@ -172,6 +172,22 @@ TEST_F(HtmlTagBuilderTests, SelectInputSupportsOnChange) {
             "</select>");
 }
 
+TEST_F(HtmlTagBuilderTests, LabelForAndSelectItemEscapeUnsafeText) {
+  SenderMock sender;
+  sendHtml.clear();
+
+  EXPECT_CALL(sender, send(_, _))
+      .WillRepeatedly(
+          [this](const char* data, int size) { appendSentHtml(data, size); });
+
+  sender.sendLabelFor("id\"<&", "lab\"<&");
+  sender.sendSelectItem(7, "opt\"<&", true);
+
+  EXPECT_EQ(sendHtml,
+            "<label for=\"id&quot;&lt;&amp;\">lab&quot;&lt;&amp;</label>"
+            "<option value=\"7\" selected>opt&quot;&lt;&amp;</option>");
+}
+
 TEST_F(HtmlTagBuilderTests, WifiParametersRegressionBeforeRefactor) {
   NetworkStateResetter::reset();
 
