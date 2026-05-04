@@ -30,6 +30,7 @@
 #include <supla/sha256.h>
 #include <supla/time.h>
 #include <supla/tools.h>
+#include <supla/device/supla_ca_cert.h>
 
 #include <cerrno>
 
@@ -216,9 +217,10 @@ void Supla::EspIdfOta::iterate() {
   configCheckUpdate.url = url;
   configCheckUpdate.timeout_ms = 5000;
   configCheckUpdate.user_agent = httpAgent;
-  if (!skipCert && sdc && sdc->getSuplaCACert()) {
-    SUPLA_LOG_INFO("SW update: using Supla CA cert");
-    configCheckUpdate.cert_pem = sdc->getSuplaCACert();
+  if (!skipCert) {
+    configCheckUpdate.cert_pem = ::suplaCACert;
+  } else {
+    SUPLA_LOG_WARNING("SW update: skip checking Supla CA cert (INSECURE)");
   }
 
   if (client) {
@@ -385,9 +387,10 @@ void Supla::EspIdfOta::iterate() {
   configGet.url = updateUrl;
   configGet.timeout_ms = 10000;
   configGet.user_agent = httpAgent;
-  if (!skipCert && sdc && sdc->getSuplaCACert()) {
-    SUPLA_LOG_INFO("SW update: using Supla CA cert");
-    configGet.cert_pem = sdc->getSuplaCACert();
+  if (!skipCert) {
+    configGet.cert_pem = ::suplaCACert;
+  } else {
+    SUPLA_LOG_WARNING("SW update: skip checking Supla CA cert (INSECURE)");
   }
   client = esp_http_client_init(&configGet);
   if (client == NULL) {

@@ -798,10 +798,7 @@ bool Supla::Protocol::SuplaSrpc::iterate(uint32_t _millis) {
     const char server[] = "iot.autodiscover.supla.org";
     auto adClient = Supla::ClientBuilder();
     adClient->setSSLEnabled(true);
-    if (sdc && sdc->getSuplaCACert()) {
-      SUPLA_LOG_INFO("Autodiscover: using Supla CA cert");
-      adClient->setCACert(sdc->getSuplaCACert());
-    }
+    adClient->setCACert(::suplaCACert);
 
     if (1 == adClient->connect(server, 443)) {
       adClient->write("GET /users/");
