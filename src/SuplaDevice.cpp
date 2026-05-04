@@ -842,8 +842,6 @@ bool SuplaDeviceClass::loadDeviceConfig() {
       if (cfg->getAuthKey(buf)) {
         setAuthKey(buf);
       }
-      generateHexString(
-          Supla::RegisterDevice::getAuthKey(), buf, SUPLA_AUTHKEY_SIZE);
       SUPLA_LOG_DEBUG("New AuthKey generated");
       cfg->initDefaultDeviceConfig();
     } else {
