@@ -49,7 +49,7 @@ class SwUpdateTests : public ::testing::Test {
   SuplaDeviceClass sd;
   BoardMock board;
   NetworkClientMock *client = nullptr;
-  ConfigMock cfg;
+  ::testing::NiceMock<ConfigMock> cfg;
   SwUpdateMock swUpdate;
 
   virtual void SetUp() {
@@ -61,6 +61,7 @@ class SwUpdateTests : public ::testing::Test {
     Supla::Channel::resetToDefaults();
     EXPECT_CALL(cfg, init()).WillOnce(Return(true));
     EXPECT_CALL(cfg, isConfigModeSupported()).WillRepeatedly(Return(true));
+    EXPECT_CALL(cfg, isSwUpdateSkipCert()).WillRepeatedly(Return(false));
     EXPECT_CALL(net, isWifiConfigRequired()).WillRepeatedly(Return(true));
   }
 
