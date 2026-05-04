@@ -44,7 +44,6 @@ void SwUpdate::send(Supla::WebSender* sender) {
   auto cfg = Supla::Storage::ConfigInstance();
   if (cfg) {
     bool update = (cfg->getDeviceMode() == DEVICE_MODE_SW_UPDATE);
-    bool skipCert = cfg->isSwUpdateSkipCert();
     bool useRemoteOta = false;
     Supla::AutoUpdatePolicy otaPolicy = Supla::AutoUpdatePolicy::SecurityOnly;
     if (sdc) {
@@ -86,9 +85,7 @@ void SwUpdate::send(Supla::WebSender* sender) {
       auto select = sender->selectTag(key, key);
       select.body([&]() {
         sender->selectOption(0, "NO", !update);
-        sender->selectOption(1, "YES", update && !skipCert);
-        sender->selectOption(2, "YES - SKIP CERTIFICATE (dangerous)",
-                             update && skipCert);
+        sender->selectOption(1, "YES", update);
       });
     });
   }
@@ -109,12 +106,6 @@ bool SwUpdate::handleResponse(const char* key, const char* value) {
       case 1: {
         cfg->setDeviceMode(DEVICE_MODE_SW_UPDATE);
         cfg->setSwUpdateSkipCert(false);
-        cfg->setSwUpdateBeta(false);
-        break;
-      }
-      case 2: {
-        cfg->setDeviceMode(DEVICE_MODE_SW_UPDATE);
-        cfg->setSwUpdateSkipCert(true);
         cfg->setSwUpdateBeta(false);
         break;
       }

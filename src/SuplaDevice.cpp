@@ -679,6 +679,7 @@ bool SuplaDeviceClass::initSwUpdateInstance(Supla::SwUpdateMode mode,
       swUpdate->useBeta();
     }
     if (cfg->isSwUpdateSkipCert()) {
+      // Recovery-only fallback; the OTA flow clears this after use.
       swUpdate->setSkipCert();
     }
   }
