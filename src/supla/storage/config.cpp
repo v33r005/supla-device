@@ -175,7 +175,7 @@ bool Config::getAESKey(uint8_t*) {
 int32_t Config::getMqttServerPort() {
   int32_t result = -1;
   getInt32("mqttport", &result);
-  if (result <= 0 || result > 65536) {
+  if (result <= 0 || result > 65535) {
     if (isMqttTlsEnabled()) {
       result = 8883;
     } else {
@@ -276,7 +276,7 @@ bool Config::setSuplaServer(const char* server) {
 }
 
 bool Config::setSuplaServerPort(int32_t port) {
-  if (port <= 0 || port > 65536) {
+  if (port <= 0 || port > 65535) {
     port = 2016;
   }
   return setInt32("suplaport", port);
@@ -305,7 +305,7 @@ bool Config::setMqttServer(const char* server) {
 }
 
 bool Config::setMqttServerPort(int32_t port) {
-  if (port <= 0 || port > 65536) {
+  if (port <= 0 || port > 65535) {
     port = 1883;
   }
   return setInt32("mqttport", port);
