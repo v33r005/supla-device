@@ -166,6 +166,7 @@ bool DisableUserInterfaceParameter::handleResponse(const char* key,
       cfg->setInt32(Supla::ConfigTag::MaxTempUICfgTag, maxTempUI);
       change = true;
     }
+    return true;
   }
   return false;
 }
