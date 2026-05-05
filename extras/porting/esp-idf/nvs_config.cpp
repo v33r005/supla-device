@@ -25,6 +25,7 @@
 #include <nvs.h>
 #include <nvs_flash.h>
 #include <esp_flash_encrypt.h>
+#include <limits.h>
 #include <supla/log_wrapper.h>
 #include <supla-common/proto.h>
 #include <string.h>
@@ -288,13 +289,15 @@ bool NvsConfig::getString(const char* key, char* value, size_t maxSize) {
 }
 
 int NvsConfig::getStringSize(const char* key) {
-  auto buf = new char[4000];
-  if (getString(key, buf, 4000)) {
-    int len = strnlen(buf, 4000);
-    delete [] buf;
-    return len;
+  size_t size = 0;
+  esp_err_t err = nvs_get_str(nvsHandle, key, nullptr, &size);
+  if (err != ESP_OK) {
+    return -1;
   }
-  return -1;
+  if (size > static_cast<size_t>(INT32_MAX)) {
+    return -1;
+  }
+  return static_cast<int>(size);
 }
 
 bool NvsConfig::setBlob(const char* key, const char* value, size_t blobSize) {

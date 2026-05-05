@@ -33,13 +33,13 @@ class NvsConfig : public Config {
   virtual ~NvsConfig();
 
   bool isEncryptionEnabled() override;
+  bool isDeviceDataPartitionAvailable() override;
 
   bool init() override;
   void removeAll() override;
 
   bool generateGuidAndAuthkey() override;
   bool getAESKey(uint8_t* result) override;
-  bool isDeviceDataPartitionAvailable();
   bool getGUID(char* result) override;
   bool getAuthKey(char* result) override;
   bool setGUID(const char* key) override;

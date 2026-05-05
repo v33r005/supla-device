@@ -692,6 +692,10 @@ bool Supla::Config::isEncryptionEnabled() {
   return false;
 }
 
+bool Supla::Config::isDeviceDataPartitionAvailable() {
+  return false;
+}
+
 int32_t Config::getChannelFunction(int channelNo) {
   if (channelNo < 0) {
     return -1;
