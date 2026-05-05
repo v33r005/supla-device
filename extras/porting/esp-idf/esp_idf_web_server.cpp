@@ -1150,7 +1150,7 @@ void Supla::EspIdfWebServer::handleLogout(httpd_req_t *req) {
 Supla::SetupRequestResult Supla::EspIdfWebServer::handleSetup(
     httpd_req_t *req, char *sessionCookie, int sessionCookieLen) {
   char buf[256] = {};
-  int ret;
+  int ret = 0;
   size_t remaining = req->content_len;
 
   if (remaining >= sizeof(buf)) {
