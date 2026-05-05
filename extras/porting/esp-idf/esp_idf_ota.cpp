@@ -25,18 +25,54 @@
 #include <stdio.h>
 #include <supla-common/log.h>
 #include <supla/device/register_device.h>
+#include <supla/device/supla_ca_cert.h>
 #include <supla/log_wrapper.h>
 #include <supla/rsa_verificator.h>
 #include <supla/sha256.h>
 #include <supla/time.h>
 #include <supla/tools.h>
-#include <supla/device/supla_ca_cert.h>
+#include <mbedtls/x509.h>
 
 #include <cerrno>
 
 #include "supla/device/sw_update.h"
 
 #define BUFFER_SIZE 4096
+
+static void formatHttpClientError(const char *prefix,
+                                  esp_http_client_handle_t client,
+                                  char *buf,
+                                  size_t bufLen) {
+  if (buf == nullptr || bufLen == 0 || client == nullptr || prefix == nullptr) {
+    return;
+  }
+
+  int errnoCode = esp_http_client_get_errno(client);
+  int tlsCode = 0;
+  int tlsFlags = 0;
+  esp_err_t tlsErr =
+      esp_http_client_get_and_clear_last_tls_error(client, &tlsCode, &tlsFlags);
+  (void)tlsErr;
+
+  if (tlsFlags != 0 || tlsCode == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED ||
+      tlsCode == -MBEDTLS_ERR_X509_CERT_VERIFY_FAILED) {
+    snprintf(buf,
+             bufLen,
+             "%s: certificate verification failed, flags=0x%x",
+             prefix,
+             tlsFlags);
+    return;
+  }
+  int errorCode = errnoCode != 0 ? errnoCode : tlsCode;
+  if (errorCode < 0) {
+    errorCode = -errorCode;
+  }
+  if (errorCode == 0) {
+    errorCode = 1;
+  }
+
+  snprintf(buf, bufLen, "%s: Error %d", prefix, errorCode);
+}
 
 #ifndef SUPLA_DEVICE_ESP32
 // ESP8266 RTOS doesn't have OTA_WITH_SEQUENTIAL_WRITES, so we replace it with
@@ -293,7 +329,7 @@ void Supla::EspIdfOta::iterate() {
   if (cJSON_IsString(status) && (status->valuestring != NULL)) {
     snprintf(buf, BUF_SIZE, "SW update status: %s", status->valuestring);
     SUPLA_LOG_INFO("%s", buf);
-//    log(buf);
+    //    log(buf);
   }
 
   esp_http_client_cleanup(client);
@@ -395,30 +431,40 @@ void Supla::EspIdfOta::iterate() {
   client = esp_http_client_init(&configGet);
   if (client == NULL) {
     retryAllowed = true;
-    fail("SW update: failed initialize GET connection with update server");
+    fail("SW update: connection init with update server failed");
     return;
   }
   esp_http_client_set_method(client, HTTP_METHOD_GET);
   err = esp_http_client_open(client, 0);
   if (err != ESP_OK) {
+    char failReason[256] = {};
+    formatHttpClientError("SW update: failed to open HTTPS connection",
+                          client,
+                          failReason,
+                          sizeof(failReason));
     retryAllowed = true;
-    fail("SW update: failed to open HTTP connection");
+    fail(failReason);
     return;
   }
   err = esp_http_client_fetch_headers(client);
   if (err < 0) {
+    char failReason[256] = {};
+    formatHttpClientError("SW update: failed to read file from url",
+                          client,
+                          failReason,
+                          sizeof(failReason));
     retryAllowed = true;
-    fail("SW update: failed to read file from url");
+    fail(failReason);
     SUPLA_LOG_DEBUG("SW update: result %d", err);
     return;
   }
 
   int returnCode = esp_http_client_get_status_code(client);
-  SUPLA_LOG_INFO("HTTP return code %d", returnCode);
+  SUPLA_LOG_INFO("HTTPS return code %d", returnCode);
   if (returnCode != 200) {
     snprintf(buf,
              BUF_SIZE,
-             "SW update: HTTP GET failed with status code %d",
+             "SW update: HTTPS GET failed with status code %d",
              returnCode);
     retryAllowed = true;
     fail(buf);
