@@ -16,8 +16,6 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
-#ifndef ARDUINO_ARCH_AVR
-
 #include <SuplaDevice.h>
 #include <string.h>
 #include <supla/log_wrapper.h>
@@ -160,6 +158,7 @@ void Supla::WebServer::notifyClientConnected(bool isPost) {
   }
 }
 
+#ifndef ARDUINO_ARCH_AVR
 const char *Supla::WebServer::getCsrfToken() {
   if (csrfToken[0] == '\0') {
     Supla::fillRandom(csrfSecret, sizeof(csrfSecret));
@@ -168,6 +167,7 @@ const char *Supla::WebServer::getCsrfToken() {
 
   return csrfToken;
 }
+#endif  // ARDUINO_ARCH_AVR
 
 bool Supla::WebServer::isCsrfTokenValid(const char *token) {
   if (token == nullptr || token[0] == '\0') {
@@ -345,4 +345,3 @@ bool Supla::WebServer::verifyCertificatesFormat() {
   return false;
 }
 
-#endif  // ARDUINO_ARCH_AVR
