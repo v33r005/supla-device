@@ -16,6 +16,8 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
+#ifndef ARDUINO_ARCH_AVR
+
 #include <SuplaDevice.h>
 #include <string.h>
 #include <supla/log_wrapper.h>
@@ -342,3 +344,5 @@ void Supla::WebServer::setBetaProcessing() {
 bool Supla::WebServer::verifyCertificatesFormat() {
   return false;
 }
+
+#endif  // ARDUINO_ARCH_AVR
