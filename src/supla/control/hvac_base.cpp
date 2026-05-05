@@ -32,6 +32,7 @@
 #include <supla/storage/config_tags.h>
 #include <supla/protocol/protocol_layer.h>
 #include <supla/protocol/mqtt/hvac_mqtt.h>
+#include <supla/tools.h>
 
 #include "output_interface.h"
 #include "relay_hvac_aggregator.h"
@@ -3425,6 +3426,7 @@ void HvacBase::copyFullChannelConfigTo(TChannelConfig_HVAC *hvac) const {
   }
 
   memcpy(hvac, &config, sizeof(TChannelConfig_HVAC));
+  hvac->ParameterFlags = parameterFlags;
 }
 
 bool HvacBase::applyNewRuntimeSettings(int mode, int32_t durationSec) {
@@ -5633,12 +5635,20 @@ bool HvacBase::fixReadonlyParameters(TChannelConfig_HVAC *hvacConfig) {
   if (memcmp(&(hvacConfig->ParameterFlags),
              &parameterFlags,
              sizeof(parameterFlags)) != 0) {
+    char currentFlagsHex[sizeof(parameterFlags) * 2 + 1] = {};
+    char expectedFlagsHex[sizeof(parameterFlags) * 2 + 1] = {};
+    generateHexString(&hvacConfig->ParameterFlags,
+                      currentFlagsHex,
+                      sizeof(parameterFlags));
+    generateHexString(&parameterFlags,
+                      expectedFlagsHex,
+                      sizeof(parameterFlags));
     SUPLA_LOG_DEBUG(
-        "HVAC[%d] ParameterFlags change from 0x%X to 0x%X not allowed "
-        "(readonly)",
+        "HVAC[%d] ParameterFlags not allowed (readonly), raw current=%s "
+        "expected=%s",
         getChannelNumber(),
-        config.ParameterFlags,
-        parameterFlags);
+        currentFlagsHex,
+        expectedFlagsHex);
     config.ParameterFlags = parameterFlags;
     readonlyViolation = true;
   }
