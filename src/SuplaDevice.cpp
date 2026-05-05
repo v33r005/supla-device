@@ -295,7 +295,8 @@ bool SuplaDeviceClass::begin(unsigned char protoVersion) {
 
   if (auto webServer = Supla::WebServer::Instance()) {
     webServer->setSuplaDeviceClass(this);
-    if (webServer->verifyCertificatesFormat()) {
+    if (webServer->resolveWebServerMode() ==
+        Supla::WebServer::WebServerMode::HttpsOnly) {
       // web password is used only when https is used
       SUPLA_LOG_DEBUG("SD: add flag CALCFG_SET_CFG_MODE_PASSWORD_SUPPORTED");
       addFlags(SUPLA_DEVICE_FLAG_CALCFG_SET_CFG_MODE_PASSWORD_SUPPORTED);

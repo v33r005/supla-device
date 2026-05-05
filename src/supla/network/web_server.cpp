@@ -16,6 +16,8 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
+#include "web_server.h"
+
 #include <SuplaDevice.h>
 #include <string.h>
 #include <supla/log_wrapper.h>
@@ -25,7 +27,6 @@
 
 #include "supla/network/html_generator.h"
 #include "supla/network/network.h"
-#include "web_server.h"
 
 Supla::WebServer *Supla::WebServer::webServerInstance = nullptr;
 
@@ -301,7 +302,7 @@ void Supla::WebServer::parsePost(const char *postContent,
 
   if (lastChunk) {
     for (auto htmlElement = Supla::HtmlElement::begin(); htmlElement;
-        htmlElement = htmlElement->next()) {
+         htmlElement = htmlElement->next()) {
       if (isSectionAllowed(htmlElement->section)) {
         htmlElement->onProcessingEnd();
       }
@@ -322,7 +323,7 @@ void Supla::WebServer::resetParser() {
   partialSize = 0;
   keyFound = false;
   memset(key, 0, HTML_KEY_LENGTH);
-  delete [] value;
+  delete[] value;
   value = nullptr;
   betaProcessing = false;
   csrfValidated = false;
@@ -341,7 +342,21 @@ void Supla::WebServer::setBetaProcessing() {
   betaProcessing = true;
 }
 
-bool Supla::WebServer::verifyCertificatesFormat() {
-  return false;
+void Supla::WebServer::setWebServerMode(WebServerMode mode) {
+  if (mode != WebServerMode::HttpOnly) {
+    SUPLA_LOG_ERROR(
+        "SERVER: setWebServerMode other than HttpOnly not implemented");
+  }
 }
 
+Supla::WebServer::WebServerMode Supla::WebServer::getWebServerMode() const {
+  return WebServerMode::HttpOnly;
+}
+
+Supla::WebServer::WebServerMode Supla::WebServer::resolveWebServerMode() const {
+  return WebServerMode::HttpOnly;
+}
+
+bool Supla::WebServer::verifyEmbeddedHttpsCertificates() {
+  return false;
+}

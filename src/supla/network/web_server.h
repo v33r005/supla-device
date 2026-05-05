@@ -35,11 +35,20 @@ extern const unsigned char favico[1150];
 
 class WebServer {
  public:
+  enum class WebServerMode {
+    HttpOnly,
+    HttpsOnly,
+    Auto,
+  };
+
   static WebServer *Instance();
   explicit WebServer(Supla::HtmlGenerator *);
   virtual ~WebServer();
   virtual void start() = 0;
   virtual void stop() = 0;
+  virtual void setWebServerMode(WebServerMode mode);
+  virtual WebServerMode getWebServerMode() const;
+  virtual WebServerMode resolveWebServerMode() const;
   void setSuplaDeviceClass(SuplaDeviceClass *);
   void notifyClientConnected(bool isPost = false);
   virtual void parsePost(const char *postContent,
@@ -50,7 +59,7 @@ class WebServer {
   bool isCsrfTokenValid(const char *token);
   void setBetaProcessing();
 
-  virtual bool verifyCertificatesFormat();
+  virtual bool verifyEmbeddedHttpsCertificates();
 
   Supla::HtmlGenerator *htmlGenerator = nullptr;
 

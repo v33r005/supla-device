@@ -57,6 +57,12 @@
 #define FAILED_LOGIN_ATTEMPT_TIMEOUT 60000   // 1 minute
 #define SESSION_EXPIRATION_MS        600000  // 10 minutes
 
+static constexpr const char *HTTPS_CERT_KEY = "https_cert";
+static constexpr const char *HTTPS_KEY_KEY = "https_key";
+static constexpr size_t HTTPS_CERT_BUFFER_SIZE = 4096;
+static constexpr size_t HTTPS_KEY_BUFFER_SIZE = 4096;
+static constexpr size_t HTTPS_RSA_KEY_BITS = 2048;
+
 static Supla::EspIdfWebServer *srvInst = nullptr;
 
 #ifndef SUPLA_CSRF_LOGIN_SETUP_PROTECTION
@@ -153,6 +159,248 @@ static int decryptAesCbc(const uint8_t *key,
   return status == PSA_SUCCESS ? 0 : -1;
 }
 #endif
+
+namespace {
+
+static bool startsWith(const uint8_t *buffer,
+                       size_t bufferLen,
+                       const char *prefix) {
+  const size_t prefixLen = strlen(prefix);
+  return buffer != nullptr && bufferLen > prefixLen &&
+         strncmp(reinterpret_cast<const char *>(buffer), prefix, prefixLen) ==
+             0;
+}
+
+static bool validateHttpsCertificates(const uint8_t *serverCert,
+                                      size_t serverCertLen,
+                                      const uint8_t *prvtKey,
+                                      size_t prvtKeyLen) {
+  if (serverCert == nullptr || prvtKey == nullptr || serverCertLen == 0 ||
+      prvtKeyLen == 0) {
+    return false;
+  }
+
+  mbedtls_x509_crt cert = {};
+  mbedtls_x509_crt_init(&cert);
+  int result = mbedtls_x509_crt_parse(
+      &cert,
+      reinterpret_cast<const unsigned char *>(serverCert),
+      serverCertLen);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to parse server certificate: -0x%04X",
+                    -result);
+    mbedtls_x509_crt_free(&cert);
+    return false;
+  }
+
+  mbedtls_pk_context pk = {};
+  mbedtls_pk_init(&pk);
+  result =
+      mbedtls_pk_parse_key(&pk,
+                           reinterpret_cast<const unsigned char *>(prvtKey),
+                           prvtKeyLen,
+                           nullptr,
+                           0);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to parse private key: -0x%04X", -result);
+    mbedtls_pk_free(&pk);
+    mbedtls_x509_crt_free(&cert);
+    return false;
+  }
+
+  result = mbedtls_pk_check_pair(&cert.pk, &pk);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: certificate and private key do not match: -0x%04X",
+                    -result);
+    mbedtls_pk_free(&pk);
+    mbedtls_x509_crt_free(&cert);
+    return false;
+  }
+
+  mbedtls_pk_free(&pk);
+  mbedtls_x509_crt_free(&cert);
+  return true;
+}
+
+static bool validatePemHttpsCertificates(const uint8_t *serverCert,
+                                         size_t serverCertLen,
+                                         const uint8_t *prvtKey,
+                                         size_t prvtKeyLen) {
+  if (serverCert == nullptr || prvtKey == nullptr || serverCertLen == 0 ||
+      prvtKeyLen == 0) {
+    return false;
+  }
+  if (serverCert[serverCertLen - 1] != '\0') {
+    SUPLA_LOG_WARNING("serverCert not valid, missing null terminator");
+    return false;
+  }
+  if (prvtKey[prvtKeyLen - 1] != '\0') {
+    SUPLA_LOG_WARNING("prvtKey not valid, missing null terminator");
+    return false;
+  }
+
+  if (!startsWith(serverCert, serverCertLen, "-----BEGIN CERTIFICATE-----")) {
+    SUPLA_LOG_WARNING("serverCert not valid, missing header");
+    return false;
+  }
+  if (!startsWith(prvtKey, prvtKeyLen, "-----BEGIN PRIVATE KEY-----") &&
+      !startsWith(prvtKey, prvtKeyLen, "-----BEGIN EC PRIVATE KEY-----") &&
+      !startsWith(prvtKey, prvtKeyLen, "-----BEGIN RSA PRIVATE KEY-----")) {
+    SUPLA_LOG_WARNING("prvtKey not valid, missing header");
+    return false;
+  }
+  if (strstr(reinterpret_cast<const char *>(serverCert),
+             "-----END CERTIFICATE-----") == nullptr) {
+    SUPLA_LOG_WARNING("serverCert not valid, missing footer");
+    return false;
+  }
+  if (strstr(reinterpret_cast<const char *>(prvtKey),
+             "-----END PRIVATE KEY-----") == nullptr &&
+      strstr(reinterpret_cast<const char *>(prvtKey),
+             "-----END EC PRIVATE KEY-----") == nullptr &&
+      strstr(reinterpret_cast<const char *>(prvtKey),
+             "-----END RSA PRIVATE KEY-----") == nullptr) {
+    SUPLA_LOG_WARNING("prvtKey not valid, missing footer");
+    return false;
+  }
+
+  return validateHttpsCertificates(
+      serverCert, serverCertLen, prvtKey, prvtKeyLen);
+}
+
+static bool looksLikePemPrivateKey(const uint8_t *prvtKey, size_t prvtKeyLen) {
+  if (prvtKey == nullptr || prvtKeyLen == 0) {
+    return false;
+  }
+  return startsWith(prvtKey, prvtKeyLen, "-----BEGIN PRIVATE KEY-----") ||
+         startsWith(prvtKey, prvtKeyLen, "-----BEGIN EC PRIVATE KEY-----") ||
+         startsWith(prvtKey, prvtKeyLen, "-----BEGIN RSA PRIVATE KEY-----");
+}
+
+static bool generateHttpsCertificates(char *serverCert,
+                                      size_t serverCertLen,
+                                      char *prvtKey,
+                                      size_t prvtKeyLen) {
+#if defined(MBEDTLS_X509_CRT_WRITE_C) && defined(MBEDTLS_PK_WRITE_C) && \
+    defined(MBEDTLS_PSA_CRYPTO_C)
+  if (serverCert == nullptr || prvtKey == nullptr) {
+    return false;
+  }
+
+  psa_status_t status = psa_crypto_init();
+  if (status != PSA_SUCCESS) {
+    SUPLA_LOG_ERROR("SERVER: failed to initialize PSA crypto: %d",
+                    static_cast<int>(status));
+    return false;
+  }
+
+  psa_key_attributes_t attrs = PSA_KEY_ATTRIBUTES_INIT;
+  psa_set_key_type(&attrs, PSA_KEY_TYPE_RSA_KEY_PAIR);
+  psa_set_key_bits(&attrs, HTTPS_RSA_KEY_BITS);
+  psa_set_key_usage_flags(&attrs,
+                          PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_EXPORT);
+  psa_set_key_algorithm(&attrs, PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_256));
+
+  psa_key_id_t keyId = 0;
+  status = psa_generate_key(&attrs, &keyId);
+  psa_reset_key_attributes(&attrs);
+  if (status != PSA_SUCCESS) {
+    SUPLA_LOG_ERROR("SERVER: failed to generate PSA RSA key: %d",
+                    static_cast<int>(status));
+    return false;
+  }
+
+  mbedtls_pk_context pk = {};
+  mbedtls_x509write_cert crt = {};
+  mbedtls_pk_init(&pk);
+  mbedtls_x509write_crt_init(&crt);
+
+  int result =
+      mbedtls_pk_copy_from_psa(static_cast<mbedtls_svc_key_id_t>(keyId), &pk);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to wrap PSA RSA key: -0x%04X", -result);
+    psa_destroy_key(keyId);
+    return false;
+  }
+
+  result = mbedtls_pk_write_key_pem(
+      &pk, reinterpret_cast<unsigned char *>(prvtKey), prvtKeyLen);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to write private key PEM: -0x%04X",
+                    -result);
+    mbedtls_pk_free(&pk);
+    psa_destroy_key(keyId);
+    return false;
+  }
+
+  uint8_t serial[16] = {};
+  Supla::fillRandom(serial, sizeof(serial));
+  result = mbedtls_x509write_crt_set_serial_raw(&crt, serial, sizeof(serial));
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to set certificate serial: -0x%04X",
+                    -result);
+    mbedtls_x509write_crt_free(&crt);
+    mbedtls_pk_free(&pk);
+    psa_destroy_key(keyId);
+    return false;
+  }
+
+  result = mbedtls_x509write_crt_set_issuer_name(&crt, "C=PL,O=SUPLA,CN=SUPLA");
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to set issuer name: -0x%04X", -result);
+    mbedtls_x509write_crt_free(&crt);
+    mbedtls_pk_free(&pk);
+    psa_destroy_key(keyId);
+    return false;
+  }
+
+  const char *deviceName = Supla::RegisterDevice::getName();
+  char subjectName[128] = {};
+  if (deviceName == nullptr || deviceName[0] == '\0') {
+    deviceName = "SUPLA Local Web Server";
+  }
+  snprintf(subjectName, sizeof(subjectName), "C=PL,O=SUPLA,CN=%s", deviceName);
+  result = mbedtls_x509write_crt_set_subject_name(&crt, subjectName);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to set subject name: -0x%04X", -result);
+    mbedtls_x509write_crt_free(&crt);
+    mbedtls_pk_free(&pk);
+    psa_destroy_key(keyId);
+    return false;
+  }
+
+  mbedtls_x509write_crt_set_subject_key(&crt, &pk);
+  mbedtls_x509write_crt_set_issuer_key(&crt, &pk);
+  mbedtls_x509write_crt_set_md_alg(&crt, MBEDTLS_MD_SHA256);
+  mbedtls_x509write_crt_set_validity(&crt, "20000101000000", "20991231235959");
+  mbedtls_x509write_crt_set_basic_constraints(&crt, 0, -1);
+
+  result = mbedtls_x509write_crt_pem(
+      &crt, reinterpret_cast<unsigned char *>(serverCert), serverCertLen);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to write server certificate PEM: -0x%04X",
+                    -result);
+    mbedtls_x509write_crt_free(&crt);
+    mbedtls_pk_free(&pk);
+    psa_destroy_key(keyId);
+    return false;
+  }
+
+  mbedtls_x509write_crt_free(&crt);
+  mbedtls_pk_free(&pk);
+  psa_destroy_key(keyId);
+  return true;
+#else
+  (void)(serverCert);
+  (void)(serverCertLen);
+  (void)(prvtKey);
+  (void)(prvtKeyLen);
+  SUPLA_LOG_ERROR("SERVER: HTTPS certificate generation is not available");
+  return false;
+#endif
+}
+
+}  // namespace
 
 // request: GET /favicon.ico
 // no auth required, just send the icon
@@ -463,29 +711,6 @@ esp_err_t betaHandler(httpd_req_t *req) {
  *
  * @return true
  */
-bool uriMatchAll(const char *reference_uri,
-                 const char *uri_to_match,
-                 size_t match_upto) {
-  return true;
-}
-
-esp_err_t redirectHandler(httpd_req_t *req) {
-  char host[64] = {0};
-  if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) {
-    strncpy(host, "192.168.4.1", sizeof(host));
-  }
-
-  char httpsUrl[600];
-  snprintf(httpsUrl, sizeof(httpsUrl), "https://%s%s", host, req->uri);
-  SUPLA_LOG_DEBUG("SERVER: redirect to %s (uri: %s)", httpsUrl, req->uri);
-
-  httpd_resp_set_status(req, "301 Moved Permanently");
-  httpd_resp_set_hdr(req, "CN", Supla::RegisterDevice::getName());
-  httpd_resp_set_hdr(req, "Location", httpsUrl);
-  httpd_resp_send(req, NULL, 0);
-  return ESP_OK;
-}
-
 httpd_uri_t uriRoot = {.uri = "/",
                        .method = static_cast<httpd_method_t>(HTTP_ANY),
                        .handler = rootHandler,
@@ -521,14 +746,50 @@ httpd_uri_t uriLogs = {.uri = "/logs",
                        .handler = logsHandler,
                        .user_ctx = NULL};
 
-Supla::EspIdfWebServer::EspIdfWebServer(Supla::HtmlGenerator *generator)
-    : WebServer(generator) {
+/**
+ * Custom URI matcher that will catch all URLs for http->https redirect
+ */
+bool uriMatchAll(const char *reference_uri,
+                 const char *uri_to_match,
+                 size_t match_upto) {
+  return true;
+}
+
+esp_err_t redirectHandler(httpd_req_t *req) {
+  char host[64] = {0};
+  if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) {
+    strncpy(host, "192.168.4.1", sizeof(host));
+  }
+
+  char httpsUrl[600];
+  snprintf(httpsUrl, sizeof(httpsUrl), "https://%s%s", host, req->uri);
+  SUPLA_LOG_DEBUG("SERVER: redirect to %s (uri: %s)", httpsUrl, req->uri);
+
+  httpd_resp_set_status(req, "301 Moved Permanently");
+  httpd_resp_set_hdr(req, "CN", Supla::RegisterDevice::getName());
+  httpd_resp_set_hdr(req, "Location", httpsUrl);
+  httpd_resp_send(req, NULL, 0);
+  return ESP_OK;
+}
+
+Supla::EspIdfWebServer::EspIdfWebServer(Supla::HtmlGenerator *generator,
+                                        WebServerMode mode)
+    : WebServer(generator), webServerMode(mode) {
   srvInst = this;
 }
 
 Supla::EspIdfWebServer::~EspIdfWebServer() {
   srvInst = nullptr;
   cleanupCerts();
+}
+
+void Supla::EspIdfWebServer::setWebServerMode(WebServerMode mode) {
+  webServerMode = mode;
+}
+
+Supla::WebServer::WebServerMode Supla::EspIdfWebServer::getWebServerMode()
+    const {
+  return webServerMode;
 }
 
 esp_err_t Supla::EspIdfWebServer::redirect(httpd_req_t *req,
@@ -636,9 +897,8 @@ bool Supla::EspIdfWebServer::ensureAuthorized(httpd_req_t *req,
   notifyClientConnected();
   reloadSaltPassword();
 
-  if (!isHttpsEnalbled()) {
-    // skip authorization when https is not available (fallback to legacy
-    // behavior)
+  if (resolveWebServerMode() == WebServerMode::HttpOnly) {
+    // Plain HTTP mode keeps the legacy behavior without login.
     return true;
   }
 
@@ -772,120 +1032,258 @@ Supla::EspIdfWebServer::PostRequestResult Supla::EspIdfWebServer::handlePost(
   return PostRequestResult::OK;
 }
 
-bool Supla::EspIdfWebServer::verifyCertificatesFormat() {
-  if (serverCert == nullptr || prvtKey == nullptr) {
-    SUPLA_LOG_ERROR("SERVER: server certificate or private key not set");
+Supla::WebServer::WebServerMode Supla::EspIdfWebServer::resolveWebServerMode()
+    const {
+  if (webServerMode != WebServerMode::Auto) {
+    return webServerMode;
+  }
+
+  auto cfg = Supla::Storage::ConfigInstance();
+  if (cfg && cfg->isDeviceDataPartitionAvailable()) {
+    return WebServerMode::HttpsOnly;
+  }
+
+  return WebServerMode::HttpOnly;
+}
+
+bool Supla::EspIdfWebServer::loadEmbeddedHttpsCertificates(bool storeActive) {
+  if (embeddedServerCert == nullptr || embeddedPrvtKey == nullptr ||
+      embeddedServerCertLen == 0 || embeddedPrvtKeyLen == 0) {
+    SUPLA_LOG_WARNING("SERVER: embedded HTTPS certificates are missing");
     return false;
   }
-  if (serverCertLen == 0 || prvtKeyLen == 0) {
-    SUPLA_LOG_ERROR("SERVER: server certificate or private key length is 0");
-    return false;
-  }
-  if (!prvtKeyDecrypted) {
-    prvtKeyDecrypted = true;
-    auto cfg = Supla::Storage::ConfigInstance();
-    uint8_t aesKey[33] =
-        {};  // key is 32 B, however mbedtls_aes_setkey_dec
-             // uses const char* for key, so we add null terminator just in case
-    if (cfg && cfg->getAESKey(aesKey)) {
-      SUPLA_LOG_INFO("AES key found");
-      uint8_t iv[IV_SIZE] = {};
-      memcpy(iv, prvtKey, IV_SIZE);
 
-      prvtKeyLen = prvtKeyLen - IV_SIZE;
-
-      SUPLA_LOG_INFO("prvtKeyLen: %d, IV_SIZE: %d", prvtKeyLen, IV_SIZE);
-      uint8_t *encryptedData = new uint8_t[prvtKeyLen + 1];
-      memcpy(encryptedData, prvtKey + IV_SIZE, prvtKeyLen);
-      memset(prvtKey, 0, prvtKeyLen + IV_SIZE);
-      encryptedData[prvtKeyLen] = '\0';
-      [[maybe_unused]] auto result =
-          decryptAesCbc(aesKey, 32, iv, encryptedData, prvtKeyLen, prvtKey);
-      prvtKeyLen++;
-      SUPLA_LOG_DEBUG("AES-CBC decrypt result: %d", result);
-      delete[] encryptedData;
-    } else {
-      SUPLA_LOG_INFO("AES key not found");
+  if (looksLikePemPrivateKey(embeddedPrvtKey, embeddedPrvtKeyLen)) {
+    if (!validatePemHttpsCertificates(embeddedServerCert,
+                                      embeddedServerCertLen,
+                                      embeddedPrvtKey,
+                                      embeddedPrvtKeyLen)) {
+      return false;
     }
+    (void)(storeActive);
+    return true;
   }
 
-  if (strncmp(reinterpret_cast<const char *>(serverCert),
-              "-----BEGIN CERTIFICATE-----",
-              27) != 0) {
-    SUPLA_LOG_WARNING("serverCert not valid, missing header");
-    return false;
-  }
-  if (strncmp(reinterpret_cast<const char *>(prvtKey),
-              "-----BEGIN PRIVATE KEY-----",
-              27) != 0 &&
-      strncmp(reinterpret_cast<const char *>(prvtKey),
-              "-----BEGIN EC PRIVATE KEY-----",
-              30) != 0) {
-    SUPLA_LOG_WARNING("prvtKey not valid, missing header");
-    return false;
-  }
-  if (strstr(reinterpret_cast<const char *>(serverCert),
-             "-----END CERTIFICATE-----") == nullptr) {
-    SUPLA_LOG_WARNING("serverCert not valid, missing footer");
-    return false;
-  }
-  if (strstr(reinterpret_cast<const char *>(prvtKey),
-             "-----END PRIVATE KEY-----") == nullptr &&
-      strstr(reinterpret_cast<const char *>(prvtKey),
-             "-----END EC PRIVATE KEY-----") == nullptr) {
-    SUPLA_LOG_WARNING("prvtKey not valid, missing footer");
-    return false;
-  }
-  if (serverCert[serverCertLen - 1] != '\0') {
-    SUPLA_LOG_WARNING("serverCert not valid, missing null terminator");
-    return false;
-  }
-  if (prvtKey[prvtKeyLen - 1] != '\0') {
-    SUPLA_LOG_WARNING("prvtKey not valid, missing null terminator");
+  auto cfg = Supla::Storage::ConfigInstance();
+  if (cfg == nullptr) {
+    SUPLA_LOG_WARNING("SERVER: config storage not available");
     return false;
   }
 
-  mbedtls_x509_crt cert = {};
-  mbedtls_x509_crt_init(&cert);
-  int result = mbedtls_x509_crt_parse(
-      &cert,
-      reinterpret_cast<const unsigned char *>(serverCert),
-      serverCertLen);
-  if (result != 0) {
-    SUPLA_LOG_ERROR("SERVER: failed to parse server certificate: -0x%04X",
-                    -result);
-    mbedtls_x509_crt_free(&cert);
+  uint8_t aesKey[33] = {};
+  if (!cfg->getAESKey(aesKey)) {
+    SUPLA_LOG_INFO("AES key not found");
+    return false;
+  }
+  SUPLA_LOG_INFO("AES key found");
+
+  if (embeddedPrvtKeyLen <= IV_SIZE) {
+    SUPLA_LOG_WARNING("SERVER: embedded encrypted private key is too short");
     return false;
   }
 
-  mbedtls_pk_context pk = {};
-  mbedtls_pk_init(&pk);
-  result =
-      mbedtls_pk_parse_key(&pk,
-                           reinterpret_cast<const unsigned char *>(prvtKey),
-                           prvtKeyLen,
-                           nullptr,
-                           0);
-  if (result != 0) {
-    SUPLA_LOG_ERROR("SERVER: failed to parse private key: -0x%04X", -result);
-    mbedtls_pk_free(&pk);
-    mbedtls_x509_crt_free(&cert);
+  uint8_t iv[IV_SIZE] = {};
+  memcpy(iv, embeddedPrvtKey, IV_SIZE);
+
+  size_t encryptedLen = embeddedPrvtKeyLen - IV_SIZE;
+  SUPLA_LOG_INFO("prvtKeyLen: %d, IV_SIZE: %d",
+                 static_cast<int>(embeddedPrvtKeyLen),
+                 IV_SIZE);
+  uint8_t *encryptedData = new uint8_t[encryptedLen + 1];
+  uint8_t *decryptedKey = new uint8_t[encryptedLen + 1];
+  if (encryptedData == nullptr || decryptedKey == nullptr) {
+    delete[] encryptedData;
+    delete[] decryptedKey;
+    SUPLA_LOG_ERROR("SERVER: failed to allocate embedded certificate buffers");
     return false;
   }
 
-  result = mbedtls_pk_check_pair(&cert.pk, &pk);
-  if (result != 0) {
-    SUPLA_LOG_ERROR("SERVER: certificate and private key do not match: -0x%04X",
-                    -result);
-    mbedtls_pk_free(&pk);
-    mbedtls_x509_crt_free(&cert);
+  memcpy(encryptedData, embeddedPrvtKey + IV_SIZE, encryptedLen);
+  encryptedData[encryptedLen] = '\0';
+  memset(decryptedKey, 0, encryptedLen + 1);
+
+  int decryptResult =
+      decryptAesCbc(aesKey, 32, iv, encryptedData, encryptedLen, decryptedKey);
+  delete[] encryptedData;
+  if (decryptResult != 0) {
+    delete[] decryptedKey;
+    SUPLA_LOG_ERROR("AES-CBC decrypt result: %d", decryptResult);
     return false;
   }
 
-  mbedtls_pk_free(&pk);
-  mbedtls_x509_crt_free(&cert);
+  if (!validatePemHttpsCertificates(embeddedServerCert,
+                                    embeddedServerCertLen,
+                                    decryptedKey,
+                                    encryptedLen + 1)) {
+    SUPLA_LOG_WARNING("SERVER: embedded HTTPS certificates are invalid");
+    delete[] decryptedKey;
+    return false;
+  }
 
+  if (!storeActive) {
+    delete[] decryptedKey;
+    return true;
+  }
+
+  bool stored = setActivePrivateKeyBuffer(decryptedKey,
+                                          static_cast<int>(encryptedLen + 1));
+  if (!stored) {
+    delete[] decryptedKey;
+    SUPLA_LOG_WARNING("SERVER: failed to store embedded HTTPS certificates");
+    return false;
+  }
   return true;
+}
+
+bool Supla::EspIdfWebServer::verifyEmbeddedHttpsCertificates() {
+  return loadEmbeddedHttpsCertificates(false);
+}
+
+bool Supla::EspIdfWebServer::loadHttpsCertificatesFromStorage() {
+  auto cfg = Supla::Storage::ConfigInstance();
+  if (cfg == nullptr) {
+    SUPLA_LOG_WARNING("SERVER: config storage not available");
+    return false;
+  }
+
+  int serverCertSize = cfg->getStringSize(HTTPS_CERT_KEY);
+  int prvtKeySize = cfg->getStringSize(HTTPS_KEY_KEY);
+  if (serverCertSize <= 0 || prvtKeySize <= 0) {
+    SUPLA_LOG_WARNING("SERVER: stored HTTPS certificates not found");
+    return false;
+  }
+  if (serverCertSize > static_cast<int>(UINT16_MAX) ||
+      prvtKeySize > static_cast<int>(UINT16_MAX)) {
+    SUPLA_LOG_ERROR("SERVER: stored HTTPS certificates are too large");
+    return false;
+  }
+
+  uint8_t *serverCertBuf = new uint8_t[serverCertSize];
+  uint8_t *prvtKeyBuf = new uint8_t[prvtKeySize];
+  if (serverCertBuf == nullptr || prvtKeyBuf == nullptr) {
+    delete[] serverCertBuf;
+    delete[] prvtKeyBuf;
+    SUPLA_LOG_ERROR("SERVER: failed to allocate HTTPS certificate buffers");
+    return false;
+  }
+
+  bool result =
+      cfg->getString(HTTPS_CERT_KEY,
+                     reinterpret_cast<char *>(serverCertBuf),
+                     serverCertSize) &&
+      cfg->getString(
+          HTTPS_KEY_KEY, reinterpret_cast<char *>(prvtKeyBuf), prvtKeySize);
+  if (!result) {
+    SUPLA_LOG_WARNING("SERVER: failed to read stored HTTPS certificates");
+    delete[] serverCertBuf;
+    delete[] prvtKeyBuf;
+    return false;
+  }
+
+  if (!looksLikePemPrivateKey(prvtKeyBuf, prvtKeySize)) {
+    SUPLA_LOG_WARNING("SERVER: stored HTTPS private key is not PEM");
+    delete[] serverCertBuf;
+    delete[] prvtKeyBuf;
+    return false;
+  }
+
+  if (!validatePemHttpsCertificates(serverCertBuf,
+                                    static_cast<size_t>(serverCertSize),
+                                    prvtKeyBuf,
+                                    static_cast<size_t>(prvtKeySize))) {
+    SUPLA_LOG_WARNING("SERVER: stored HTTPS certificates are invalid");
+    delete[] serverCertBuf;
+    delete[] prvtKeyBuf;
+    return false;
+  }
+
+  bool loaded = setActiveCertificateBuffers(serverCertBuf,
+                                            static_cast<int>(serverCertSize),
+                                            prvtKeyBuf,
+                                            static_cast<int>(prvtKeySize));
+  if (!loaded) {
+    delete[] serverCertBuf;
+    delete[] prvtKeyBuf;
+  }
+
+  return loaded;
+}
+
+bool Supla::EspIdfWebServer::generateHttpsCertificates() {
+  uint8_t *serverCertBuf = new uint8_t[HTTPS_CERT_BUFFER_SIZE];
+  uint8_t *prvtKeyBuf = new uint8_t[HTTPS_KEY_BUFFER_SIZE];
+  if (serverCertBuf == nullptr || prvtKeyBuf == nullptr) {
+    delete[] serverCertBuf;
+    delete[] prvtKeyBuf;
+    SUPLA_LOG_ERROR("SERVER: failed to allocate temporary HTTPS buffers");
+    return false;
+  }
+  memset(serverCertBuf, 0, HTTPS_CERT_BUFFER_SIZE);
+  memset(prvtKeyBuf, 0, HTTPS_KEY_BUFFER_SIZE);
+
+  bool result =
+      ::generateHttpsCertificates(reinterpret_cast<char *>(serverCertBuf),
+                                  HTTPS_CERT_BUFFER_SIZE,
+                                  reinterpret_cast<char *>(prvtKeyBuf),
+                                  HTTPS_KEY_BUFFER_SIZE);
+  if (!result) {
+    delete[] serverCertBuf;
+    delete[] prvtKeyBuf;
+    return false;
+  }
+
+  bool stored = setActiveCertificateBuffers(
+      serverCertBuf,
+      strlen(reinterpret_cast<char *>(serverCertBuf)) + 1,
+      prvtKeyBuf,
+      strlen(reinterpret_cast<char *>(prvtKeyBuf)) + 1);
+  if (!stored) {
+    delete[] serverCertBuf;
+    delete[] prvtKeyBuf;
+  }
+
+  if (!stored || this->serverCert == nullptr || this->prvtKey == nullptr) {
+    SUPLA_LOG_ERROR(
+        "SERVER: generated HTTPS certificates could not be stored in memory");
+    return false;
+  }
+
+  auto cfg = Supla::Storage::ConfigInstance();
+  if (cfg) {
+    bool saved =
+        cfg->setString(HTTPS_CERT_KEY,
+                       reinterpret_cast<const char *>(serverCert)) &&
+        cfg->setString(HTTPS_KEY_KEY, reinterpret_cast<const char *>(prvtKey));
+    if (saved) {
+      cfg->commit();
+      SUPLA_LOG_INFO("SERVER: generated and stored new HTTPS certificates");
+    } else {
+      SUPLA_LOG_WARNING(
+          "SERVER: generated HTTPS certificates but failed to store them");
+    }
+  } else {
+    SUPLA_LOG_WARNING(
+        "SERVER: generated HTTPS certificates without config storage");
+  }
+
+  return validatePemHttpsCertificates(
+      serverCert, serverCertLen, prvtKey, prvtKeyLen);
+}
+
+bool Supla::EspIdfWebServer::ensureHttpsCertificates() {
+  cleanupCerts();
+
+  if (loadEmbeddedHttpsCertificates()) {
+    return true;
+  }
+
+  if (loadHttpsCertificatesFromStorage()) {
+    return true;
+  }
+
+  SUPLA_LOG_WARNING("SERVER: HTTPS certificates are missing or invalid");
+  SUPLA_LOG_WARNING("SERVER: generating replacement HTTPS certificates");
+  return generateHttpsCertificates();
 }
 
 void Supla::EspIdfWebServer::start() {
@@ -894,60 +1292,16 @@ void Supla::EspIdfWebServer::start() {
   }
 
   SUPLA_LOG_INFO("Starting local web server");
-  bool fallbackToHttp = true;
+
+  WebServerMode activeMode = resolveWebServerMode();
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.lru_purge_enable = true;
   config.max_open_sockets = 2;
   config.stack_size = 6144;
 
-  if (!verifyCertificatesFormat()) {
-    SUPLA_LOG_ERROR("Failed to verify certificates format");
-  } else {
-    httpd_ssl_config_t configHttps = HTTPD_SSL_CONFIG_DEFAULT();
-    configHttps.httpd.lru_purge_enable = true;
-    configHttps.httpd.max_open_sockets = 5;
-    configHttps.httpd.max_uri_handlers = 7;
-
-    configHttps.servercert = serverCert;
-    configHttps.servercert_len = serverCertLen;
-
-    configHttps.prvtkey_pem = prvtKey;
-    configHttps.prvtkey_len = prvtKeyLen;
-    delay(100);
-    if (httpd_ssl_start(&serverHttps, &configHttps) == ESP_OK) {
-      fallbackToHttp = false;
-      httpd_register_uri_handler(serverHttps, &uriRoot);
-      httpd_register_uri_handler(serverHttps, &uriBeta);
-      httpd_register_uri_handler(serverHttps, &uriFavicon);
-      httpd_register_uri_handler(serverHttps, &uriLogin);
-      httpd_register_uri_handler(serverHttps, &uriLogout);
-      httpd_register_uri_handler(serverHttps, &uriSetup);
-      httpd_register_uri_handler(serverHttps, &uriLogs);
-
-      // start http with redirect
-      config.uri_match_fn = uriMatchAll;
-      config.max_uri_handlers = 1;
-      config.max_open_sockets = 1;
-      if (httpd_start(&serverHttp, &config) == ESP_OK) {
-        httpd_uri_t redirectAll = {
-            .uri = "/",  // we use uriMatchAll which will catch all URLs
-            .method = static_cast<httpd_method_t>(HTTP_ANY),
-            .handler = redirectHandler,
-            .user_ctx = NULL};
-        httpd_register_uri_handler(serverHttp, &redirectAll);
-      }
-    } else {
-      SUPLA_LOG_ERROR("Failed to start local https web server");
-      if (serverHttps) {
-        httpd_stop(serverHttps);
-        serverHttps = nullptr;
-      }
-    }
-  }
-
-  if (fallbackToHttp) {
-    // fallback with standard http server
+  if (activeMode == WebServerMode::HttpOnly) {
+    SUPLA_LOG_INFO("SERVER: starting local web server in HTTP mode");
     if (httpd_start(&serverHttp, &config) == ESP_OK) {
       httpd_register_uri_handler(serverHttp, &uriRoot);
       httpd_register_uri_handler(serverHttp, &uriBeta);
@@ -956,6 +1310,65 @@ void Supla::EspIdfWebServer::start() {
       //      httpd_register_uri_handler(serverHttp, &uriLogin);
       //      httpd_register_uri_handler(serverHttp, &uriLogout);
       //      httpd_register_uri_handler(serverHttp, &uriSetup);
+    } else {
+      SUPLA_LOG_ERROR("Failed to start local http web server");
+    }
+  } else {
+    if (!ensureHttpsCertificates()) {
+      SUPLA_LOG_ERROR("Failed to prepare HTTPS certificates");
+    } else {
+      const uint8_t *httpsServerCert =
+          serverCert != nullptr ? serverCert : embeddedServerCert;
+      uint16_t httpsServerCertLen =
+          serverCert != nullptr ? serverCertLen : embeddedServerCertLen;
+      const uint8_t *httpsPrvtKey =
+          prvtKey != nullptr ? prvtKey : embeddedPrvtKey;
+      uint16_t httpsPrvtKeyLen =
+          prvtKey != nullptr ? prvtKeyLen : embeddedPrvtKeyLen;
+
+      if (httpsServerCert == nullptr || httpsPrvtKey == nullptr ||
+          httpsServerCertLen == 0 || httpsPrvtKeyLen == 0) {
+        SUPLA_LOG_ERROR("Failed to select HTTPS certificates for startup");
+      } else {
+        httpd_ssl_config_t configHttps = HTTPD_SSL_CONFIG_DEFAULT();
+        configHttps.httpd.lru_purge_enable = true;
+        configHttps.httpd.max_open_sockets = 5;
+        configHttps.httpd.max_uri_handlers = 7;
+
+        configHttps.servercert = httpsServerCert;
+        configHttps.servercert_len = httpsServerCertLen;
+
+        configHttps.prvtkey_pem = httpsPrvtKey;
+        configHttps.prvtkey_len = httpsPrvtKeyLen;
+        delay(100);
+        if (httpd_ssl_start(&serverHttps, &configHttps) == ESP_OK) {
+          httpd_register_uri_handler(serverHttps, &uriRoot);
+          httpd_register_uri_handler(serverHttps, &uriBeta);
+          httpd_register_uri_handler(serverHttps, &uriFavicon);
+          httpd_register_uri_handler(serverHttps, &uriLogin);
+          httpd_register_uri_handler(serverHttps, &uriLogout);
+          httpd_register_uri_handler(serverHttps, &uriSetup);
+          httpd_register_uri_handler(serverHttps, &uriLogs);
+
+          config.uri_match_fn = uriMatchAll;
+          config.max_uri_handlers = 1;
+          config.max_open_sockets = 1;
+          if (httpd_start(&serverHttp, &config) == ESP_OK) {
+            httpd_uri_t redirectAll = {
+                .uri = "/",  // we use uriMatchAll which will catch all URLs
+                .method = static_cast<httpd_method_t>(HTTP_ANY),
+                .handler = redirectHandler,
+                .user_ctx = NULL};
+            httpd_register_uri_handler(serverHttp, &redirectAll);
+          }
+        } else {
+          SUPLA_LOG_ERROR("Failed to start local https web server");
+          if (serverHttps) {
+            httpd_stop(serverHttps);
+            serverHttps = nullptr;
+          }
+        }
+      }
     }
   }
 
@@ -1043,36 +1456,84 @@ void Supla::EspIdfSender::send(const char *buf, int size) {
 }
 
 void Supla::EspIdfWebServer::cleanupCerts() {
+  if (this->serverCert) {
+    delete[] this->serverCert;
+  }
   if (this->prvtKey) {
     delete[] this->prvtKey;
-    prvtKey = nullptr;
   }
+  serverCert = nullptr;
+  prvtKey = nullptr;
+  serverCertLen = 0;
+  prvtKeyLen = 0;
+}
+
+bool Supla::EspIdfWebServer::setActiveCertificateBuffers(uint8_t *serverCert,
+                                                         int serverCertLen,
+                                                         uint8_t *prvtKey,
+                                                         int prvtKeyLen) {
+  if (serverCert == nullptr || prvtKey == nullptr || serverCertLen <= 0 ||
+      prvtKeyLen <= 0) {
+    SUPLA_LOG_ERROR("Failed to set active server certificate or private key");
+    return false;
+  }
+  if (serverCertLen > static_cast<int>(UINT16_MAX) ||
+      prvtKeyLen > static_cast<int>(UINT16_MAX)) {
+    SUPLA_LOG_ERROR("Active server certificate or private key is too large");
+    return false;
+  }
+
+  SUPLA_LOG_INFO("Server certificate length: %d, private key length: %d",
+                 serverCertLen,
+                 prvtKeyLen);
+
+  cleanupCerts();
+  this->serverCert = serverCert;
+  this->prvtKey = prvtKey;
+  this->serverCertLen = static_cast<uint16_t>(serverCertLen);
+  this->prvtKeyLen = static_cast<uint16_t>(prvtKeyLen);
+  return true;
+}
+
+bool Supla::EspIdfWebServer::setActivePrivateKeyBuffer(uint8_t *prvtKey,
+                                                       int prvtKeyLen) {
+  if (prvtKey == nullptr || prvtKeyLen <= 0) {
+    SUPLA_LOG_ERROR("Failed to set active private key");
+    return false;
+  }
+  if (prvtKeyLen > static_cast<int>(UINT16_MAX)) {
+    SUPLA_LOG_ERROR("Active private key is too large");
+    return false;
+  }
+
+  cleanupCerts();
+  this->prvtKey = prvtKey;
+  this->prvtKeyLen = static_cast<uint16_t>(prvtKeyLen);
+  return true;
 }
 
 void Supla::EspIdfWebServer::setServerCertificate(const uint8_t *serverCert,
                                                   int serverCertLen,
                                                   const uint8_t *prvtKey,
                                                   int prvtKeyLen) {
-  cleanupCerts();
-
-  this->serverCert = serverCert;
-
-  this->prvtKey = new uint8_t[prvtKeyLen];
-
-  SUPLA_LOG_INFO("Server certificate length: %d, private key length: %d",
-                 serverCertLen,
-                 prvtKeyLen);
-
-  if (this->serverCert == nullptr || this->prvtKey == nullptr) {
-    SUPLA_LOG_ERROR("Failed to allocate memory for https certificates");
-    cleanupCerts();
+  if (serverCert == nullptr || prvtKey == nullptr || serverCertLen <= 0 ||
+      prvtKeyLen <= 0) {
+    SUPLA_LOG_ERROR("Failed to set embedded server certificate or private key");
+    return;
+  }
+  if (serverCertLen > static_cast<int>(UINT16_MAX) ||
+      prvtKeyLen > static_cast<int>(UINT16_MAX)) {
+    SUPLA_LOG_ERROR("Embedded server certificate or private key is too large");
     return;
   }
 
-  this->serverCertLen = serverCertLen;
-
-  this->prvtKeyLen = prvtKeyLen;
-  memcpy(this->prvtKey, prvtKey, prvtKeyLen);
+  embeddedServerCert = serverCert;
+  embeddedPrvtKey = prvtKey;
+  embeddedServerCertLen = static_cast<uint16_t>(serverCertLen);
+  embeddedPrvtKeyLen = static_cast<uint16_t>(prvtKeyLen);
+  SUPLA_LOG_INFO("Embedded server certificate pointers updated: cert=%p key=%p",
+                 static_cast<const void *>(embeddedServerCert),
+                 static_cast<const void *>(embeddedPrvtKey));
 }
 
 bool Supla::EspIdfWebServer::isPasswordConfigured() const {
