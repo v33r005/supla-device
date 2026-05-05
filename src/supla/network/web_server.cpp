@@ -158,6 +158,23 @@ void Supla::WebServer::notifyClientConnected(bool isPost) {
   }
 }
 
+const char *Supla::WebServer::getCsrfToken() {
+  if (csrfToken[0] == '\0') {
+    Supla::fillRandom(csrfSecret, sizeof(csrfSecret));
+    generateHexString(csrfSecret, csrfToken, sizeof(csrfSecret));
+  }
+
+  return csrfToken;
+}
+
+bool Supla::WebServer::isCsrfTokenValid(const char *token) {
+  if (token == nullptr || token[0] == '\0') {
+    return false;
+  }
+
+  return strcmp(getCsrfToken(), token) == 0;
+}
+
 void Supla::WebServer::addSecurityLog(Supla::SecurityLogSource source,
                                       const char *log) const {
   if (sdc) {
@@ -179,6 +196,13 @@ void Supla::WebServer::parsePost(const char *postContent,
     return;
   }
 
+  if (csrfRejected) {
+    if (lastChunk) {
+      resetParser();
+    }
+    return;
+  }
+
   if (!value) {
     value = new char[HTML_VAL_LENGTH];
     memset(value, 0, HTML_VAL_LENGTH);
@@ -190,6 +214,9 @@ void Supla::WebServer::parsePost(const char *postContent,
   for (auto ptr = startPtr; ptr != endPtr; ptr++) {
     if (!keyFound && ((*ptr) == '=' || (ptr + 1) == endPtr)) {
       ptrdiff_t keyLength = (ptr - startPtr);
+      if (*ptr != '=' && (ptr + 1) == endPtr) {
+        keyLength++;
+      }
       if (keyLength > HTML_KEY_LENGTH - 1 - partialSize) {
         keyLength = HTML_KEY_LENGTH - 1 - partialSize;
       }
@@ -203,6 +230,9 @@ void Supla::WebServer::parsePost(const char *postContent,
       }
     } else if (keyFound && ((*ptr) == '&' || (ptr + 1) == endPtr)) {
       ptrdiff_t valLength = ptr - startPtr;
+      if (*ptr != '&' && (ptr + 1) == endPtr) {
+        valLength++;
+      }
       if (valLength > HTML_VAL_LENGTH - 1 - partialSize) {
         valLength = HTML_VAL_LENGTH - 1 - partialSize;
       }
@@ -210,6 +240,32 @@ void Supla::WebServer::parsePost(const char *postContent,
       startPtr = ptr + 1;
       if ((*ptr) == '&' || lastChunk) {
         keyFound = false;
+        if (!csrfValidated) {
+          if (strcmp(key, "csrf") == 0) {
+            if (!isCsrfTokenValid(value)) {
+              SUPLA_LOG_WARNING("SERVER: invalid CSRF token");
+              csrfRejected = true;
+              break;
+            }
+            csrfValidated = true;
+            partialSize = 0;
+            memset(key, 0, HTML_KEY_LENGTH);
+            memset(value, 0, HTML_VAL_LENGTH);
+            continue;
+          }
+          partialSize = 0;
+          memset(key, 0, HTML_KEY_LENGTH);
+          memset(value, 0, HTML_VAL_LENGTH);
+          continue;
+        }
+
+        if (strcmp(key, "csrf") == 0) {
+          partialSize = 0;
+          memset(key, 0, HTML_KEY_LENGTH);
+          memset(value, 0, HTML_VAL_LENGTH);
+          continue;
+        }
+
         // keys are alfanumeric only so we don't decode them. Values
         // are provided by user, so those have to be decoded
         urlDecodeInplace(value, HTML_VAL_LENGTH);
@@ -249,11 +305,14 @@ void Supla::WebServer::parsePost(const char *postContent,
       }
     }
 
+    if (csrfRejected || !csrfValidated) {
+      return;
+    }
+
     if (Supla::Storage::ConfigInstance()) {
       Supla::Storage::ConfigInstance()->commit();
       sdc->disableLocalActionsIfNeeded();
     }
-    resetParser();
   }
 }
 
@@ -264,6 +323,8 @@ void Supla::WebServer::resetParser() {
   delete [] value;
   value = nullptr;
   betaProcessing = false;
+  csrfValidated = false;
+  csrfRejected = false;
 }
 
 bool Supla::WebServer::isSectionAllowed(Supla::HtmlSection section) const {

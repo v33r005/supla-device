@@ -24,6 +24,7 @@
 #include <time.h>
 #include <inttypes.h>
 #include <supla/log_wrapper.h>
+#include <supla/network/web_server.h>
 
 #include "web_sender.h"
 
@@ -451,6 +452,24 @@ void WebSender::sendSelectItem(int value,
   }
   sendSafe(label ? label : "");
   send("</option>");
+}
+
+void WebSender::sendCsrfField() {
+  auto server = Supla::WebServer::Instance();
+  if (server == nullptr) {
+    return;
+  }
+
+  const char *token = server->getCsrfToken();
+  if (token == nullptr || token[0] == '\0') {
+    return;
+  }
+
+  auto input = voidTag("input");
+  input.attr("type", "hidden");
+  input.attr("name", "csrf");
+  input.attr("value", token);
+  input.finish();
 }
 
 void WebSender::sendHidden(bool hidden) {

@@ -84,6 +84,9 @@ void postHandler() {
         serverInstance->getServerPtr()->send(
             303, "text/plain", "Redirecting...");
       }
+    } else {
+      serverInstance->getServerPtr()->send(
+          400, "text/plain", "Invalid POST request");
     }
   }
 }
@@ -95,6 +98,9 @@ void postBetaHandler() {
       serverInstance->getServerPtr()->sendHeader("Location", "/beta", true);
       serverInstance->getServerPtr()->send(
           303, "text/plain", "Redirecting...");
+    } else {
+      serverInstance->getServerPtr()->send(
+          400, "text/plain", "Invalid POST request");
     }
   }
 }
@@ -119,7 +125,23 @@ bool Supla::EspWebServer::handlePost(bool beta) {
     setBetaProcessing();
   }
 
+  int csrfArg = -1;
   for (int i = 0; i < server.args(); i++) {
+    if (strcmp(server.argName(i).c_str(), "csrf") == 0) {
+      csrfArg = i;
+      break;
+    }
+  }
+
+  if (csrfArg < 0 || !isCsrfTokenValid(server.arg(csrfArg).c_str())) {
+    SUPLA_LOG_WARNING("SERVER: invalid CSRF token");
+    return false;
+  }
+
+  for (int i = 0; i < server.args(); i++) {
+    if (strcmp(server.argName(i).c_str(), "csrf") == 0) {
+      continue;
+    }
     SUPLA_LOG_DEBUG(
               "SERVER: key %s, value %s",
               server.argName(i).c_str(),

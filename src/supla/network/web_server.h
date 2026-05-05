@@ -46,6 +46,8 @@ class WebServer {
                          int size,
                          bool lastChunk = true);
   virtual void resetParser();
+  const char *getCsrfToken();
+  bool isCsrfTokenValid(const char *token);
   void setBetaProcessing();
 
   virtual bool verifyCertificatesFormat();
@@ -73,6 +75,10 @@ class WebServer {
   char key[HTML_KEY_LENGTH] = {};
   char *value = nullptr;
   bool betaProcessing = false;
+  bool csrfValidated = false;
+  bool csrfRejected = false;
+  uint8_t csrfSecret[16] = {};
+  char csrfToken[33] = {};
 };
 
 };  // namespace Supla

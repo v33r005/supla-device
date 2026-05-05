@@ -43,12 +43,19 @@ class EspIdfSender : public Supla::WebSender {
 
 class EspIdfWebServer : public Supla::WebServer {
  public:
+  enum class PostRequestResult {
+    OK,
+    TIMEOUT,
+    INVALID_REQUEST,
+    CSRF_INVALID,
+  };
+
   explicit EspIdfWebServer(HtmlGenerator *generator = nullptr);
   virtual ~EspIdfWebServer();
   void start() override;
   void stop() override;
 
-  bool handlePost(httpd_req_t *req, bool beta = false);
+  PostRequestResult handlePost(httpd_req_t *req, bool beta = false);
 
   void setServerCertificate(const uint8_t *serverCert,
                             int serverCertLen,

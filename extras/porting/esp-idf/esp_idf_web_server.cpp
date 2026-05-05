@@ -16,23 +16,23 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
+#include <arpa/inet.h>
+#include <ctype.h>
+#include <esp_tls.h>
+#include <netinet/in.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <supla-common/log.h>
-#include <supla/time.h>
-#include <supla/tools.h>
+#include <supla/crypto.h>
+#include <supla/device/register_device.h>
 #include <supla/log_wrapper.h>
 #include <supla/network/html_generator.h>
-#include <supla/storage/storage.h>
 #include <supla/storage/config.h>
-#include <esp_tls.h>
-#include <supla/device/register_device.h>
-#include <ctype.h>
-#include <supla/crypto.h>
+#include <supla/storage/storage.h>
+#include <supla/time.h>
+#include <supla/tools.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <stdio.h>
 #if defined(__has_include)
 #if __has_include(<mbedtls/aes.h>)
 #define SUPLA_HAVE_MBEDTLS_AES 1
@@ -47,16 +47,49 @@
 #include <mbedtls/aes.h>
 #endif
 
-#include "esp_idf_web_server.h"
-
 #include "esp_https_server.h"
+#include "esp_idf_web_server.h"
 
 #define IV_SIZE                      16  // AES block size
 #define MAX_FAILED_LOGIN_ATTEMPTS    4
-#define FAILED_LOGIN_ATTEMPT_TIMEOUT 60000  // 1 minute
+#define FAILED_LOGIN_ATTEMPT_TIMEOUT 60000   // 1 minute
 #define SESSION_EXPIRATION_MS        600000  // 10 minutes
 
 static Supla::EspIdfWebServer *srvInst = nullptr;
+
+#ifndef SUPLA_CSRF_LOGIN_SETUP_PROTECTION
+// Temporary workaround for missing CSRF protection handling in mobile
+// client for login and setup pages.
+#define SUPLA_CSRF_LOGIN_SETUP_PROTECTION 0
+#endif
+
+static bool readCsrfTokenFromBody(httpd_req_t *req,
+                                  char *csrfToken,
+                                  size_t csrfTokenLen) {
+  char buf[256] = {};
+  size_t remaining = req->content_len;
+  if (remaining >= sizeof(buf)) {
+    SUPLA_LOG_INFO("Request too large");
+    return false;
+  }
+
+  size_t offset = 0;
+  while (remaining > 0) {
+    int ret = httpd_req_recv(req, buf + offset, remaining);
+    if (ret <= 0) {
+      SUPLA_LOG_INFO("Failed to read request body");
+      return false;
+    }
+    offset += ret;
+    remaining -= ret;
+  }
+
+  buf[offset] = '\0';
+  if (httpd_query_key_value(buf, "csrf", csrfToken, csrfTokenLen) != ESP_OK) {
+    csrfToken[0] = '\0';
+  }
+  return true;
+}
 
 constexpr int SUPLA_SERVER_SEND_BUF_SIZE = 512;
 
@@ -71,12 +104,8 @@ static int decryptAesCbc(const uint8_t *key,
   mbedtls_aes_init(&aes);
   int result = mbedtls_aes_setkey_dec(&aes, key, keyLen * 8);
   if (result == 0) {
-    result = mbedtls_aes_crypt_cbc(&aes,
-                                   MBEDTLS_AES_DECRYPT,
-                                   inputLen,
-                                   iv,
-                                   input,
-                                   output);
+    result = mbedtls_aes_crypt_cbc(
+        &aes, MBEDTLS_AES_DECRYPT, inputLen, iv, input, output);
   }
   mbedtls_aes_free(&aes);
   return result;
@@ -109,17 +138,12 @@ static int decryptAesCbc(const uint8_t *key,
   }
   size_t outLen = 0;
   if (status == PSA_SUCCESS) {
-    status = psa_cipher_update(&op,
-                               input,
-                               inputLen,
-                               output,
-                               inputLen,
-                               &outLen);
+    status = psa_cipher_update(&op, input, inputLen, output, inputLen, &outLen);
   }
   if (status == PSA_SUCCESS) {
     size_t finishLen = 0;
-    status = psa_cipher_finish(&op, output + outLen,
-                               inputLen - outLen, &finishLen);
+    status =
+        psa_cipher_finish(&op, output + outLen, inputLen - outLen, &finishLen);
     outLen += finishLen;
   }
   psa_cipher_abort(&op);
@@ -172,11 +196,30 @@ esp_err_t rootHandler(httpd_req_t *req) {
     if (!srvInst->ensureAuthorized(req, sessionCookie, sizeof(sessionCookie))) {
       return srvInst->redirect(req, 303, srvInst->loginOrSetupUrl(), "main");
     }
-    if (srvInst->handlePost(req)) {
-      srvInst->redirect(req, 303, "/", "deleted");
+    auto postResult = srvInst->handlePost(req);
+    if (postResult == Supla::EspIdfWebServer::PostRequestResult::OK) {
+      SUPLA_LOG_DEBUG("SERVER: post request handled OK, redirecting to /");
+      auto redirectResult = srvInst->redirect(req, 303, "/", "deleted");
+      SUPLA_LOG_DEBUG("SERVER: redirect result %d", redirectResult);
+      if (redirectResult != ESP_OK) {
+        httpd_resp_send_err(
+            req, HTTPD_500_INTERNAL_SERVER_ERROR, "Redirect failed");
+      }
       return ESP_OK;
     }
-    return ESP_FAIL;
+    switch (postResult) {
+      case Supla::EspIdfWebServer::PostRequestResult::TIMEOUT:
+        httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Request timeout");
+        break;
+      case Supla::EspIdfWebServer::PostRequestResult::CSRF_INVALID:
+        httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Invalid CSRF token");
+        break;
+      case Supla::EspIdfWebServer::PostRequestResult::INVALID_REQUEST:
+      default:
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid POST request");
+        break;
+    }
+    return ESP_OK;
   }
 
   return ESP_FAIL;
@@ -221,9 +264,9 @@ esp_err_t loginHandler(httpd_req_t *req) {
       bool loginResult =
           srvInst->login(req, nullptr, sessionCookie, sizeof(sessionCookie));
       SUPLA_LOG_DEBUG("SERVER: login result %d", loginResult);
-      if (!loginResult && !srvInst->ensureAuthorized(
-                              req, sessionCookie, sizeof(sessionCookie),
-                              true)) {
+      if (!loginResult &&
+          !srvInst->ensureAuthorized(
+              req, sessionCookie, sizeof(sessionCookie), true)) {
         srvInst->addSecurityLog(req, "Failed login attempt");
         SUPLA_LOG_DEBUG("SERVER: login failed, send login page");
         Supla::EspIdfSender sender(
@@ -250,6 +293,14 @@ esp_err_t logoutHandler(httpd_req_t *req) {
   if (srvInst->isAuthorizationBlocked()) {
     httpd_resp_set_hdr(req, "Auth-Status", "too-many");
     httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Too many requests");
+    return ESP_OK;
+  }
+
+  char csrfToken[65] = {};
+  if (!readCsrfTokenFromBody(req, csrfToken, sizeof(csrfToken)) ||
+      !srvInst->isCsrfTokenValid(csrfToken)) {
+    SUPLA_LOG_WARNING("Invalid CSRF token on logout request");
+    httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Invalid CSRF token");
     return ESP_OK;
   }
 
@@ -308,7 +359,6 @@ esp_err_t setupHandler(httpd_req_t *req) {
   }
   return ESP_FAIL;
 }
-
 
 // request: GET /logs
 // - if not authorized, redirect to /login or /setup
@@ -372,11 +422,31 @@ esp_err_t betaHandler(httpd_req_t *req) {
     if (!srvInst->ensureAuthorized(req, sessionCookie, sizeof(sessionCookie))) {
       return srvInst->redirect(req, 303, srvInst->loginOrSetupUrl(), "beta");
     }
-    if (srvInst->handlePost(req, true)) {
-      srvInst->redirect(req, 303, "/beta", "deleted");
+    auto postResult = srvInst->handlePost(req, true);
+    if (postResult == Supla::EspIdfWebServer::PostRequestResult::OK) {
+      SUPLA_LOG_DEBUG(
+          "SERVER: beta post request handled OK, redirecting to /beta");
+      auto redirectResult = srvInst->redirect(req, 303, "/beta", "deleted");
+      SUPLA_LOG_DEBUG("SERVER: redirect result %d", redirectResult);
+      if (redirectResult != ESP_OK) {
+        httpd_resp_send_err(
+            req, HTTPD_500_INTERNAL_SERVER_ERROR, "Redirect failed");
+      }
       return ESP_OK;
     }
-    return ESP_FAIL;
+    switch (postResult) {
+      case Supla::EspIdfWebServer::PostRequestResult::TIMEOUT:
+        httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Request timeout");
+        break;
+      case Supla::EspIdfWebServer::PostRequestResult::CSRF_INVALID:
+        httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Invalid CSRF token");
+        break;
+      case Supla::EspIdfWebServer::PostRequestResult::INVALID_REQUEST:
+      default:
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid POST request");
+        break;
+    }
+    return ESP_OK;
   }
 
   return ESP_FAIL;
@@ -392,67 +462,62 @@ esp_err_t betaHandler(httpd_req_t *req) {
  * @return true
  */
 bool uriMatchAll(const char *reference_uri,
-                                   const char *uri_to_match,
-                                   size_t match_upto) {
+                 const char *uri_to_match,
+                 size_t match_upto) {
   return true;
 }
 
 esp_err_t redirectHandler(httpd_req_t *req) {
-    char host[64] = {0};
-    if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) !=
-        ESP_OK) {
-      strncpy(host, "192.168.4.1", sizeof(host));
-    }
+  char host[64] = {0};
+  if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) {
+    strncpy(host, "192.168.4.1", sizeof(host));
+  }
 
-    char httpsUrl[600];
-    snprintf(httpsUrl, sizeof(httpsUrl), "https://%s%s", host, req->uri);
-    SUPLA_LOG_DEBUG("SERVER: redirect to %s (uri: %s)", httpsUrl, req->uri);
+  char httpsUrl[600];
+  snprintf(httpsUrl, sizeof(httpsUrl), "https://%s%s", host, req->uri);
+  SUPLA_LOG_DEBUG("SERVER: redirect to %s (uri: %s)", httpsUrl, req->uri);
 
-    httpd_resp_set_status(req, "301 Moved Permanently");
-    httpd_resp_set_hdr(req, "CN", Supla::RegisterDevice::getName());
-    httpd_resp_set_hdr(req, "Location", httpsUrl);
-    httpd_resp_send(req, NULL, 0);
-    return ESP_OK;
+  httpd_resp_set_status(req, "301 Moved Permanently");
+  httpd_resp_set_hdr(req, "CN", Supla::RegisterDevice::getName());
+  httpd_resp_set_hdr(req, "Location", httpsUrl);
+  httpd_resp_send(req, NULL, 0);
+  return ESP_OK;
 }
 
 httpd_uri_t uriRoot = {.uri = "/",
-                      .method = static_cast<httpd_method_t>(HTTP_ANY),
-                      .handler = rootHandler,
-                      .user_ctx = NULL};
+                       .method = static_cast<httpd_method_t>(HTTP_ANY),
+                       .handler = rootHandler,
+                       .user_ctx = NULL};
 
 httpd_uri_t uriBeta = {.uri = "/beta",
-                          .method = static_cast<httpd_method_t>(HTTP_ANY),
-                          .handler = betaHandler,
-                          .user_ctx = NULL};
+                       .method = static_cast<httpd_method_t>(HTTP_ANY),
+                       .handler = betaHandler,
+                       .user_ctx = NULL};
 
 httpd_uri_t uriFavicon = {.uri = "/favicon.ico",
                           .method = HTTP_GET,
                           .handler = getFavicon,
                           .user_ctx = NULL};
 
-httpd_uri_t uriLogout = {
-    .uri = "/logout",
-    .method = HTTP_POST,
-    .handler = logoutHandler,
-    .user_ctx = NULL};
+httpd_uri_t uriLogout = {.uri = "/logout",
+                         .method = HTTP_POST,
+                         .handler = logoutHandler,
+                         .user_ctx = NULL};
 
-httpd_uri_t uriLogin = {
-    .uri = "/login",
-    .method = static_cast<httpd_method_t>(HTTP_ANY),
-    .handler = loginHandler,
-    .user_ctx = NULL};
+httpd_uri_t uriLogin = {.uri = "/login",
+                        .method = static_cast<httpd_method_t>(HTTP_ANY),
+                        .handler = loginHandler,
+                        .user_ctx = NULL};
 
-httpd_uri_t uriSetup = {
-    .uri = "/setup",
-    .method = static_cast<httpd_method_t>(HTTP_ANY),
-    .handler = setupHandler,
-    .user_ctx = NULL};
+httpd_uri_t uriSetup = {.uri = "/setup",
+                        .method = static_cast<httpd_method_t>(HTTP_ANY),
+                        .handler = setupHandler,
+                        .user_ctx = NULL};
 
-httpd_uri_t uriLogs = {
-    .uri = "/logs",
-    .method = static_cast<httpd_method_t>(HTTP_ANY),
-    .handler = logsHandler,
-    .user_ctx = NULL};
+httpd_uri_t uriLogs = {.uri = "/logs",
+                       .method = static_cast<httpd_method_t>(HTTP_ANY),
+                       .handler = logsHandler,
+                       .user_ctx = NULL};
 
 Supla::EspIdfWebServer::EspIdfWebServer(Supla::HtmlGenerator *generator)
     : WebServer(generator) {
@@ -465,9 +530,9 @@ Supla::EspIdfWebServer::~EspIdfWebServer() {
 }
 
 esp_err_t Supla::EspIdfWebServer::redirect(httpd_req_t *req,
-                                      int code,
-                                      const char *destination,
-                                      const char *cookieRedirect) {
+                                           int code,
+                                           const char *destination,
+                                           const char *cookieRedirect) {
   char buf[100] = {};
   if (cookieRedirect) {
     int maxAge = 360;
@@ -477,7 +542,8 @@ esp_err_t Supla::EspIdfWebServer::redirect(httpd_req_t *req,
     snprintf(buf,
              sizeof(buf),
              "redirect_to=%s; Path=/; HttpOnly; Secure; Max-Age=%d",
-             cookieRedirect, maxAge);
+             cookieRedirect,
+             maxAge);
     httpd_resp_set_hdr(req, "Set-Cookie", buf);
     SUPLA_LOG_DEBUG("SERVER: Set-Cookie: %s", buf);
   }
@@ -556,8 +622,8 @@ bool Supla::EspIdfWebServer::isSessionCookieValid(const char *sessionCookie) {
   }
 
   SUPLA_LOG_WARNING("SERVER: invalid session cookie: hmac mismatch");
-//  SUPLA_LOG_WARNING("SERVER: expected: %s, received: %s", sessionHmacHex,
-//                    separator + 1);
+  //  SUPLA_LOG_WARNING("SERVER: expected: %s, received: %s", sessionHmacHex,
+  //                    separator + 1);
   return false;
 }
 
@@ -585,7 +651,7 @@ bool Supla::EspIdfWebServer::ensureAuthorized(httpd_req_t *req,
       httpd_resp_set_hdr(req, "Auth-Status", "ok");
       // renew cookie
       SUPLA_LOG_DEBUG("SERVER: renewing session cookie");
-      setSessionCookie(req, sessionCookie, sessionCookieLen);;
+      setSessionCookie(req, sessionCookie, sessionCookieLen);
       SUPLA_LOG_DEBUG("SERVER: session cookie renewed");
 
       failedLoginAttempts = 0;
@@ -607,7 +673,8 @@ bool Supla::EspIdfWebServer::ensureAuthorized(httpd_req_t *req,
   return false;
 }
 
-bool Supla::EspIdfWebServer::handlePost(httpd_req_t *req, bool beta) {
+Supla::EspIdfWebServer::PostRequestResult Supla::EspIdfWebServer::handlePost(
+    httpd_req_t *req, bool beta) {
   notifyClientConnected(true);
   auto cfg = Supla::Storage::ConfigInstance();
   char email[SUPLA_EMAIL_MAXSIZE] = {};
@@ -685,15 +752,22 @@ bool Supla::EspIdfWebServer::handlePost(httpd_req_t *req, bool beta) {
   if (ret <= 0) {
     resetParser();
     if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
-      httpd_resp_send_408(req);
+      return PostRequestResult::TIMEOUT;
     }
-    return false;
+    return PostRequestResult::INVALID_REQUEST;
+  }
+
+  if (csrfRejected || !csrfValidated) {
+    resetParser();
+    return csrfRejected ? PostRequestResult::CSRF_INVALID
+                        : PostRequestResult::INVALID_REQUEST;
   }
 
   // call getHandler to generate config html page
   srvInst->dataSaved = true;
+  resetParser();
 
-  return true;
+  return PostRequestResult::OK;
 }
 
 bool Supla::EspIdfWebServer::verifyCertificatesFormat() {
@@ -719,12 +793,8 @@ bool Supla::EspIdfWebServer::verifyCertificatesFormat() {
       memcpy(encryptedData, prvtKey + IV_SIZE, prvtKeyLen);
       memset(prvtKey, 0, prvtKeyLen + IV_SIZE);
       encryptedData[prvtKeyLen] = '\0';
-      [[maybe_unused]] auto result = decryptAesCbc(aesKey,
-                                  32,
-                                  iv,
-                                  encryptedData,
-                                  prvtKeyLen,
-                                  prvtKey);
+      [[maybe_unused]] auto result =
+          decryptAesCbc(aesKey, 32, iv, encryptedData, prvtKeyLen, prvtKey);
       prvtKeyLen++;
       SUPLA_LOG_DEBUG("AES-CBC decrypt result: %d", result);
       delete[] encryptedData;
@@ -741,7 +811,10 @@ bool Supla::EspIdfWebServer::verifyCertificatesFormat() {
   }
   if (strncmp(reinterpret_cast<const char *>(prvtKey),
               "-----BEGIN PRIVATE KEY-----",
-              27) != 0) {
+              27) != 0 &&
+      strncmp(reinterpret_cast<const char *>(prvtKey),
+              "-----BEGIN EC PRIVATE KEY-----",
+              30) != 0) {
     SUPLA_LOG_WARNING("prvtKey not valid, missing header");
     return false;
   }
@@ -751,7 +824,9 @@ bool Supla::EspIdfWebServer::verifyCertificatesFormat() {
     return false;
   }
   if (strstr(reinterpret_cast<const char *>(prvtKey),
-             "-----END PRIVATE KEY-----") == nullptr) {
+             "-----END PRIVATE KEY-----") == nullptr &&
+      strstr(reinterpret_cast<const char *>(prvtKey),
+             "-----END EC PRIVATE KEY-----") == nullptr) {
     SUPLA_LOG_WARNING("prvtKey not valid, missing footer");
     return false;
   }
@@ -785,7 +860,7 @@ void Supla::EspIdfWebServer::start() {
   } else {
     httpd_ssl_config_t configHttps = HTTPD_SSL_CONFIG_DEFAULT();
     configHttps.httpd.lru_purge_enable = true;
-    configHttps.httpd.max_open_sockets = 1;
+    configHttps.httpd.max_open_sockets = 5;
     configHttps.httpd.max_uri_handlers = 7;
 
     configHttps.servercert = serverCert;
@@ -832,9 +907,9 @@ void Supla::EspIdfWebServer::start() {
       httpd_register_uri_handler(serverHttp, &uriBeta);
       httpd_register_uri_handler(serverHttp, &uriFavicon);
       // for http we do not have login/logout and setup currently
-//      httpd_register_uri_handler(serverHttp, &uriLogin);
-//      httpd_register_uri_handler(serverHttp, &uriLogout);
-//      httpd_register_uri_handler(serverHttp, &uriSetup);
+      //      httpd_register_uri_handler(serverHttp, &uriLogin);
+      //      httpd_register_uri_handler(serverHttp, &uriLogout);
+      //      httpd_register_uri_handler(serverHttp, &uriSetup);
     }
   }
 
@@ -854,7 +929,7 @@ void Supla::EspIdfWebServer::stop() {
     serverHttps = nullptr;
   }
   if (sendBuf) {
-    delete [] sendBuf;
+    delete[] sendBuf;
     sendBuf = nullptr;
   }
 }
@@ -923,16 +998,15 @@ void Supla::EspIdfSender::send(const char *buf, int size) {
 
 void Supla::EspIdfWebServer::cleanupCerts() {
   if (this->prvtKey) {
-    delete [] this->prvtKey;
+    delete[] this->prvtKey;
     prvtKey = nullptr;
   }
 }
 
-void Supla::EspIdfWebServer::setServerCertificate(
-    const uint8_t *serverCert,
-    int serverCertLen,
-    const uint8_t *prvtKey,
-    int prvtKeyLen) {
+void Supla::EspIdfWebServer::setServerCertificate(const uint8_t *serverCert,
+                                                  int serverCertLen,
+                                                  const uint8_t *prvtKey,
+                                                  int prvtKeyLen) {
   cleanupCerts();
 
   this->serverCert = serverCert;
@@ -977,28 +1051,43 @@ bool Supla::EspIdfWebServer::isPasswordCorrect(const char *password) const {
   return false;
 }
 
-bool Supla::EspIdfWebServer::login(httpd_req_t *req, const char *password,
-    char *sessionCookie, int sessionCookieLen) {
+bool Supla::EspIdfWebServer::login(httpd_req_t *req,
+                                   const char *password,
+                                   char *sessionCookie,
+                                   int sessionCookieLen) {
   reloadSaltPassword();
   bool passwordIsCorrect = false;
   if (isPasswordConfigured()) {
     if (password == nullptr) {
       // check if password is send in form
       char buf[256] = {};
-      int remaining = req->content_len;
+      size_t remaining = req->content_len;
 
       if (remaining >= sizeof(buf)) {
         SUPLA_LOG_INFO("Setup request too large");
         return false;
       }
 
-      auto ret = httpd_req_recv(req, buf, remaining);
-      if (ret <= 0) {
-        SUPLA_LOG_INFO("Failed to read setup request");
-        return false;
+      size_t offset = 0;
+      while (remaining > 0) {
+        int ret = httpd_req_recv(req, buf + offset, remaining);
+        if (ret <= 0) {
+          SUPLA_LOG_INFO("Failed to read setup request");
+          return false;
+        }
+        offset += ret;
+        remaining -= ret;
       }
 
-      buf[ret] = '\0';
+      buf[offset] = '\0';
+#if SUPLA_CSRF_LOGIN_SETUP_PROTECTION
+      char csrfToken[65] = {};
+      httpd_query_key_value(buf, "csrf", csrfToken, sizeof(csrfToken));
+      if (!isCsrfTokenValid(csrfToken)) {
+        SUPLA_LOG_WARNING("Invalid CSRF token on login request");
+        return false;
+      }
+#endif
       char formPassword[64] = {};
       httpd_query_key_value(buf, "cfg_pwd", formPassword, sizeof(formPassword));
       urlDecodeInplace(formPassword, sizeof(formPassword));
@@ -1014,7 +1103,7 @@ bool Supla::EspIdfWebServer::login(httpd_req_t *req, const char *password,
       // save session cookie
       SUPLA_LOG_DEBUG("SERVER: setting session cookie");
       httpd_resp_set_hdr(req, "Auth-Status", "ok");
-      setSessionCookie(req, sessionCookie, sessionCookieLen);;
+      setSessionCookie(req, sessionCookie, sessionCookieLen);
       SUPLA_LOG_INFO("Login successful (%s)", sessionCookie);
       return true;
     }
@@ -1058,24 +1147,41 @@ void Supla::EspIdfWebServer::handleLogout(httpd_req_t *req) {
                      "session=deleted; Path=/; HttpOnly; Secure; Max-Age=0");
 }
 
-Supla::SetupRequestResult Supla::EspIdfWebServer::handleSetup(httpd_req_t *req,
-    char *sessionCookie, int sessionCookieLen) {
+Supla::SetupRequestResult Supla::EspIdfWebServer::handleSetup(
+    httpd_req_t *req, char *sessionCookie, int sessionCookieLen) {
   char buf[256] = {};
   int ret;
-  int remaining = req->content_len;
+  size_t remaining = req->content_len;
 
   if (remaining >= sizeof(buf)) {
     SUPLA_LOG_INFO("Setup request too large");
     return SetupRequestResult::INVALID_REQUEST;
   }
 
-  ret = httpd_req_recv(req, buf, remaining);
+  size_t offset = 0;
+  while (remaining > 0) {
+    ret = httpd_req_recv(req, buf + offset, remaining);
+    if (ret <= 0) {
+      SUPLA_LOG_INFO("Failed to read setup request");
+      return SetupRequestResult::INVALID_REQUEST;
+    }
+    offset += ret;
+    remaining -= ret;
+  }
+
+  buf[offset] = '\0';
   if (ret <= 0) {
-    SUPLA_LOG_INFO("Failed to read setup request");
     return SetupRequestResult::INVALID_REQUEST;
   }
 
-  buf[ret] = '\0';
+#if SUPLA_CSRF_LOGIN_SETUP_PROTECTION
+  char csrfToken[65] = {};
+  httpd_query_key_value(buf, "csrf", csrfToken, sizeof(csrfToken));
+  if (!isCsrfTokenValid(csrfToken)) {
+    SUPLA_LOG_WARNING("Invalid CSRF token on setup request");
+    return SetupRequestResult::INVALID_REQUEST;
+  }
+#endif
 
   char oldPassword[64] = {};
   char password[64] = {};
@@ -1105,8 +1211,7 @@ Supla::SetupRequestResult Supla::EspIdfWebServer::handleSetup(httpd_req_t *req,
 
   if (!saltPassword.isPasswordStrong(password)) {
     SUPLA_LOG_INFO("Password is not strong enough");
-    addSecurityLog(req,
-                   "Password change failed: password too weak");
+    addSecurityLog(req, "Password change failed: password too weak");
     return SetupRequestResult::WEAK_PASSWORD;
   }
 

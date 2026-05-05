@@ -22,6 +22,7 @@
 #include <network_mock.h>
 #include <supla/network/html/custom_text_parameter.h>
 #include <supla/network/html/select_input_parameter.h>
+#include <supla/network/web_server.h>
 #include <supla/network/html/wifi_parameters.h>
 #include <supla/network/web_sender.h>
 
@@ -52,6 +53,32 @@ class NetworkStateResetter : public Supla::Network {
   bool isReady() override {
     return false;
   }
+};
+
+class DummyWebServer : public Supla::WebServer {
+ public:
+  DummyWebServer() : WebServer(nullptr) {}
+  void start() override {}
+  void stop() override {}
+};
+
+class CountingHtmlElement : public Supla::HtmlElement {
+ public:
+  CountingHtmlElement() : Supla::HtmlElement(Supla::HTML_SECTION_FORM) {}
+
+  void send(Supla::WebSender *) override {
+  }
+
+  bool handleResponse(const char *key, const char *value) override {
+    lastKey = key ? key : "";
+    lastValue = value ? value : "";
+    handledCount++;
+    return true;
+  }
+
+  std::string lastKey;
+  std::string lastValue;
+  int handledCount = 0;
 };
 
 class HtmlTagBuilderTests : public ::testing::Test {
@@ -186,6 +213,42 @@ TEST_F(HtmlTagBuilderTests, LabelForAndSelectItemEscapeUnsafeText) {
   EXPECT_EQ(sendHtml,
             "<label for=\"id&quot;&lt;&amp;\">lab&quot;&lt;&amp;</label>"
             "<option value=\"7\" selected>opt&quot;&lt;&amp;</option>");
+}
+
+TEST_F(HtmlTagBuilderTests, SendCsrfFieldRendersHiddenInput) {
+  DummyWebServer server;
+  SenderMock sender;
+  sendHtml.clear();
+
+  EXPECT_CALL(sender, send(_, _))
+      .WillRepeatedly(
+          [this](const char* data, int size) { appendSentHtml(data, size); });
+
+  const std::string token = server.getCsrfToken();
+  ASSERT_EQ(token.size(), 32u);
+  EXPECT_TRUE(server.isCsrfTokenValid(token.c_str()));
+  EXPECT_FALSE(server.isCsrfTokenValid("0123456789abcdef0123456789abcdef"));
+
+  sender.sendCsrfField();
+
+  EXPECT_EQ(sendHtml,
+            "<input type=\"hidden\" name=\"csrf\" value=\"" + token + "\">");
+}
+
+TEST_F(HtmlTagBuilderTests, ParsePostRequiresValidCsrfFirstField) {
+  DummyWebServer server;
+  CountingHtmlElement element;
+
+  const std::string token = server.getCsrfToken();
+  const std::string invalidBody = "foo=bar";
+  server.parsePost(invalidBody.c_str(), invalidBody.size(), true);
+  EXPECT_EQ(element.handledCount, 0);
+  server.resetParser();
+
+  const std::string validBody = "csrf=" + token + "&foo=bar";
+  server.parsePost(validBody.c_str(), validBody.size(), true);
+  EXPECT_EQ(element.handledCount, 1);
+  EXPECT_EQ(element.lastKey, "foo");
 }
 
 TEST_F(HtmlTagBuilderTests, WifiParametersRegressionBeforeRefactor) {
