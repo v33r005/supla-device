@@ -19,6 +19,8 @@
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <esp_tls.h>
+#include <mbedtls/pk.h>
+#include <mbedtls/x509_crt.h>
 #include <netinet/in.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -775,6 +777,10 @@ bool Supla::EspIdfWebServer::verifyCertificatesFormat() {
     SUPLA_LOG_ERROR("SERVER: server certificate or private key not set");
     return false;
   }
+  if (serverCertLen == 0 || prvtKeyLen == 0) {
+    SUPLA_LOG_ERROR("SERVER: server certificate or private key length is 0");
+    return false;
+  }
   if (!prvtKeyDecrypted) {
     prvtKeyDecrypted = true;
     auto cfg = Supla::Storage::ConfigInstance();
@@ -838,6 +844,46 @@ bool Supla::EspIdfWebServer::verifyCertificatesFormat() {
     SUPLA_LOG_WARNING("prvtKey not valid, missing null terminator");
     return false;
   }
+
+  mbedtls_x509_crt cert = {};
+  mbedtls_x509_crt_init(&cert);
+  int result = mbedtls_x509_crt_parse(
+      &cert,
+      reinterpret_cast<const unsigned char *>(serverCert),
+      serverCertLen);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to parse server certificate: -0x%04X",
+                    -result);
+    mbedtls_x509_crt_free(&cert);
+    return false;
+  }
+
+  mbedtls_pk_context pk = {};
+  mbedtls_pk_init(&pk);
+  result =
+      mbedtls_pk_parse_key(&pk,
+                           reinterpret_cast<const unsigned char *>(prvtKey),
+                           prvtKeyLen,
+                           nullptr,
+                           0);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: failed to parse private key: -0x%04X", -result);
+    mbedtls_pk_free(&pk);
+    mbedtls_x509_crt_free(&cert);
+    return false;
+  }
+
+  result = mbedtls_pk_check_pair(&cert.pk, &pk);
+  if (result != 0) {
+    SUPLA_LOG_ERROR("SERVER: certificate and private key do not match: -0x%04X",
+                    -result);
+    mbedtls_pk_free(&pk);
+    mbedtls_x509_crt_free(&cert);
+    return false;
+  }
+
+  mbedtls_pk_free(&pk);
+  mbedtls_x509_crt_free(&cert);
 
   return true;
 }
