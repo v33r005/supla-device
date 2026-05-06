@@ -26,6 +26,7 @@
 #include <esp_eth_driver.h>
 #include <esp_eth_netif_glue.h>
 #include <esp_eth_com.h>
+#include <esp_eth_phy.h>
 #include <esp_event.h>
 #include <esp_netif.h>
 
@@ -144,7 +145,7 @@ void Supla::EspIdfLan8720::setup() {
     esp32EmacConfig.smi_gpio.mdc_num = mdcGpio;
     esp32EmacConfig.smi_gpio.mdio_num = mdioGpio;
     esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&esp32EmacConfig, &macConfig);
-    esp_eth_phy_t *phy = esp_eth_phy_new_lan87xx(&phyConfig);
+    esp_eth_phy_t *phy = esp_eth_phy_new_generic(&phyConfig);
 
     ethHandle = NULL;
     esp_eth_config_t config = ETH_DEFAULT_CONFIG(mac, phy);
