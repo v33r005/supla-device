@@ -19,21 +19,21 @@
 #include "supla_srpc.h"
 
 #include <SuplaDevice.h>
+#include <stdio.h>
+#include <string.h>
 #include <supla-common/srpc.h>
 #include <supla/channels/channel.h>
 #include <supla/clock/clock.h>
 #include <supla/device/channel_conflict_resolver.h>
 #include <supla/device/register_device.h>
 #include <supla/device/remote_device_config.h>
+#include <supla/device/supla_ca_cert.h>
 #include <supla/log_wrapper.h>
 #include <supla/network/client.h>
 #include <supla/network/network.h>
 #include <supla/storage/storage.h>
 #include <supla/time.h>
 #include <supla/tools.h>
-#include <supla/device/supla_ca_cert.h>
-#include <string.h>
-#include <stdio.h>
 
 namespace Supla::Protocol {
 struct CalCfgResultPendingItem {
@@ -1018,10 +1018,13 @@ bool Supla::Protocol::SuplaSrpc::iterate(uint32_t _millis) {
         remoteDeviceConfig == nullptr) {
       SUPLA_LOG_INFO("Sending new device config to server");
       remoteDeviceConfig = new Supla::Device::RemoteDeviceConfig();
-      TSDS_SetDeviceConfig deviceConfig = {};
-      if (remoteDeviceConfig->fillSetDeviceConfig(&deviceConfig)) {
-        srpc_ds_async_set_device_config_request(srpc, &deviceConfig);
+      auto *deviceConfig = new TSDS_SetDeviceConfig{};
+      if (deviceConfig &&
+          remoteDeviceConfig->fillSetDeviceConfig(deviceConfig)) {
+        srpc_ds_async_set_device_config_request(srpc, deviceConfig);
+        delete deviceConfig;
       } else {
+        delete deviceConfig;
         cfg->clearDeviceConfigChangeFlag();
         cfg->saveWithDelay(1000);
       }
@@ -1379,10 +1382,13 @@ void Supla::Protocol::SuplaSrpc::handleDeviceConfig(
     }
 
     if (remoteDeviceConfig->isSetDeviceConfigRequired()) {
-      TSDS_SetDeviceConfig deviceConfig = {};
-      if (remoteDeviceConfig->fillSetDeviceConfig(&deviceConfig)) {
-        srpc_ds_async_set_device_config_request(srpc, &deviceConfig);
+      auto *deviceConfig = new TSDS_SetDeviceConfig{};
+      if (deviceConfig &&
+          remoteDeviceConfig->fillSetDeviceConfig(deviceConfig)) {
+        srpc_ds_async_set_device_config_request(srpc, deviceConfig);
+        delete deviceConfig;
       } else {
+        delete deviceConfig;
         auto cfg = Supla::Storage::ConfigInstance();
         if (cfg) {
           cfg->clearDeviceConfigChangeFlag();
