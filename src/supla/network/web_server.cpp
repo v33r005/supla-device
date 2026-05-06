@@ -200,6 +200,9 @@ void Supla::WebServer::parsePost(const char *postContent,
   }
 
   if (csrfRejected) {
+    if (!lastChunk) {
+      return;
+    }
     if (lastChunk) {
       resetParser();
     }
@@ -248,6 +251,8 @@ void Supla::WebServer::parsePost(const char *postContent,
             if (!isCsrfTokenValid(value)) {
               SUPLA_LOG_WARNING("SERVER: invalid CSRF token");
               csrfRejected = true;
+              delete[] value;
+              value = nullptr;
               break;
             }
             csrfValidated = true;

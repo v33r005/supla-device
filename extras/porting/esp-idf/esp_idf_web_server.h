@@ -20,6 +20,7 @@
 #define EXTRAS_PORTING_ESP_IDF_ESP_IDF_WEB_SERVER_H_
 
 #include <esp_http_server.h>
+#include <supla/network/html_output_buffer.h>
 #include <supla/network/web_sender.h>
 #include <supla/network/web_server.h>
 #include <supla/network/html_generator.h>
@@ -34,11 +35,9 @@ class EspIdfSender : public Supla::WebSender {
   void send(const char *, int) override;
 
  protected:
+  static bool flushChunk(void *context, const char *buf, int size);
   httpd_req_t *reqHandler;
-  bool error = false;
-  char *sendBuf = nullptr;
-  int sendBufLen = 0;
-  int sendBufPos = 0;
+  HtmlOutputBuffer outputBuffer;
 };
 
 class EspIdfWebServer : public Supla::WebServer {

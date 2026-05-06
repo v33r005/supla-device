@@ -99,8 +99,6 @@ static bool readCsrfTokenFromBody(httpd_req_t *req,
   return true;
 }
 
-constexpr int SUPLA_SERVER_SEND_BUF_SIZE = 512;
-
 #if defined(SUPLA_HAVE_MBEDTLS_AES)
 static int decryptAesCbc(const uint8_t *key,
                          size_t keyLen,
@@ -434,8 +432,9 @@ esp_err_t rootHandler(httpd_req_t *req) {
               req, sessionCookie, sizeof(sessionCookie))) {
         return srvInst->redirect(req, 303, srvInst->loginOrSetupUrl(), "main");
       } else {
-        Supla::EspIdfSender sender(
-            req, srvInst->getSendBufPtr(), SUPLA_SERVER_SEND_BUF_SIZE);
+        Supla::EspIdfSender sender(req,
+                                   srvInst->getSendBufPtr(),
+                                   Supla::SUPLA_HTML_OUTPUT_BUFFER_SIZE);
         srvInst->htmlGenerator->sendPage(
             &sender, srvInst->dataSaved, srvInst->isHttpsEnalbled());
       }
@@ -505,7 +504,7 @@ esp_err_t loginHandler(httpd_req_t *req) {
       }
       SUPLA_LOG_DEBUG("SERVER: not authorized, send login page");
       Supla::EspIdfSender sender(
-          req, srvInst->getSendBufPtr(), SUPLA_SERVER_SEND_BUF_SIZE);
+          req, srvInst->getSendBufPtr(), Supla::SUPLA_HTML_OUTPUT_BUFFER_SIZE);
       srvInst->htmlGenerator->sendLoginPage(&sender);
     }
     return ESP_OK;
@@ -521,8 +520,9 @@ esp_err_t loginHandler(httpd_req_t *req) {
               req, sessionCookie, sizeof(sessionCookie), true)) {
         srvInst->addSecurityLog(req, "Failed login attempt");
         SUPLA_LOG_DEBUG("SERVER: login failed, send login page");
-        Supla::EspIdfSender sender(
-            req, srvInst->getSendBufPtr(), SUPLA_SERVER_SEND_BUF_SIZE);
+        Supla::EspIdfSender sender(req,
+                                   srvInst->getSendBufPtr(),
+                                   Supla::SUPLA_HTML_OUTPUT_BUFFER_SIZE);
         srvInst->htmlGenerator->sendLoginPage(&sender, true);
       } else {
         // redirect based on cookie value
@@ -578,7 +578,7 @@ esp_err_t setupHandler(httpd_req_t *req) {
     SUPLA_LOG_DEBUG("SERVER: GET setup request");
     if (srvInst->htmlGenerator) {
       Supla::EspIdfSender sender(
-          req, srvInst->getSendBufPtr(), SUPLA_SERVER_SEND_BUF_SIZE);
+          req, srvInst->getSendBufPtr(), Supla::SUPLA_HTML_OUTPUT_BUFFER_SIZE);
       if (!srvInst->isPasswordConfigured()) {
         srvInst->htmlGenerator->sendSetupPage(&sender, false);
       } else if (srvInst->ensureAuthorized(
@@ -598,8 +598,9 @@ esp_err_t setupHandler(httpd_req_t *req) {
         auto setupResult =
             srvInst->handleSetup(req, sessionCookie, sizeof(sessionCookie));
         if (setupResult != Supla::SetupRequestResult::OK) {
-          Supla::EspIdfSender sender(
-              req, srvInst->getSendBufPtr(), SUPLA_SERVER_SEND_BUF_SIZE);
+          Supla::EspIdfSender sender(req,
+                                     srvInst->getSendBufPtr(),
+                                     Supla::SUPLA_HTML_OUTPUT_BUFFER_SIZE);
           srvInst->htmlGenerator->sendSetupPage(
               &sender, srvInst->isPasswordConfigured(), setupResult);
         } else {
@@ -630,8 +631,9 @@ esp_err_t logsHandler(httpd_req_t *req) {
               req, sessionCookie, sizeof(sessionCookie))) {
         return srvInst->redirect(req, 303, srvInst->loginOrSetupUrl(), "main");
       } else {
-        Supla::EspIdfSender sender(
-            req, srvInst->getSendBufPtr(), SUPLA_SERVER_SEND_BUF_SIZE);
+        Supla::EspIdfSender sender(req,
+                                   srvInst->getSendBufPtr(),
+                                   Supla::SUPLA_HTML_OUTPUT_BUFFER_SIZE);
         srvInst->htmlGenerator->sendLogsPage(&sender,
                                              srvInst->isHttpsEnalbled());
       }
@@ -661,8 +663,9 @@ esp_err_t betaHandler(httpd_req_t *req) {
               req, sessionCookie, sizeof(sessionCookie))) {
         return srvInst->redirect(req, 303, srvInst->loginOrSetupUrl(), "beta");
       } else {
-        Supla::EspIdfSender sender(
-            req, srvInst->getSendBufPtr(), SUPLA_SERVER_SEND_BUF_SIZE);
+        Supla::EspIdfSender sender(req,
+                                   srvInst->getSendBufPtr(),
+                                   Supla::SUPLA_HTML_OUTPUT_BUFFER_SIZE);
         srvInst->htmlGenerator->sendBetaPage(
             &sender, srvInst->dataSaved, srvInst->isHttpsEnalbled());
       }
@@ -1376,7 +1379,7 @@ void Supla::EspIdfWebServer::start() {
   }
 
   if (!sendBuf) {
-    sendBuf = new char[SUPLA_SERVER_SEND_BUF_SIZE];
+    sendBuf = new char[Supla::SUPLA_HTML_OUTPUT_BUFFER_SIZE];
   }
 }
 
@@ -1399,7 +1402,7 @@ void Supla::EspIdfWebServer::stop() {
 Supla::EspIdfSender::EspIdfSender(httpd_req_t *req,
                                   char *sendBuf,
                                   int sendBufLen)
-    : reqHandler(req), sendBuf(sendBuf), sendBufLen(sendBufLen) {
+    : reqHandler(req), outputBuffer(sendBuf, sendBufLen) {
 }
 
 bool Supla::EspIdfWebServer::isHttpsEnalbled() const {
@@ -1407,55 +1410,25 @@ bool Supla::EspIdfWebServer::isHttpsEnalbled() const {
 }
 
 Supla::EspIdfSender::~EspIdfSender() {
-  if (!error) {
-    if (sendBuf && sendBufPos > 0) {
-      httpd_resp_send_chunk(reqHandler, sendBuf, sendBufPos);
-      sendBufPos = 0;
-    }
+  if (reqHandler && !outputBuffer.error()) {
+    outputBuffer.flush(reqHandler, &EspIdfSender::flushChunk);
     httpd_resp_send_chunk(reqHandler, nullptr, 0);
   }
 }
 
+bool Supla::EspIdfSender::flushChunk(void *context, const char *buf, int size) {
+  if (context == nullptr || buf == nullptr || size < 0) {
+    return false;
+  }
+  auto *req = reinterpret_cast<httpd_req_t *>(context);
+  return httpd_resp_send_chunk(req, buf, size) == ESP_OK;
+}
+
 void Supla::EspIdfSender::send(const char *buf, int size) {
-  if (error || !buf || !reqHandler) {
+  if (!buf || !reqHandler) {
     return;
   }
-  if (size == -1) {
-    size = strlen(buf);
-  }
-  if (size == 0) {
-    return;
-  }
-
-  if (sendBuf) {
-    if (sendBufPos + size + 1 > sendBufLen) {
-      esp_err_t err = httpd_resp_send_chunk(reqHandler, sendBuf, sendBufPos);
-      if (err != ESP_OK) {
-        error = true;
-      }
-      sendBufPos = 0;
-      if (size + 1 > sendBufLen && !error) {
-        err = httpd_resp_send_chunk(reqHandler, buf, size);
-        if (err != ESP_OK) {
-          error = true;
-        }
-        return;
-      }
-    }
-    memcpy(&sendBuf[sendBufPos], buf, size);
-    while (sendBufPos > 0 && sendBuf[sendBufPos - 1] == 0) {
-      // trim trailing zeros
-      sendBufPos--;
-    }
-    sendBufPos += size;
-    sendBuf[sendBufPos] = 0;
-  } else {
-    esp_err_t err = httpd_resp_send_chunk(reqHandler, buf, size);
-
-    if (err != ESP_OK) {
-      error = true;
-    }
-  }
+  outputBuffer.send(reqHandler, &EspIdfSender::flushChunk, buf, size);
 }
 
 void Supla::EspIdfWebServer::cleanupCerts() {

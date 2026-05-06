@@ -109,6 +109,10 @@ void postBetaHandler() {
   return &server;
 }
 
+char *Supla::EspWebServer::getSendBufPtr() const {
+  return sendBuf;
+}
+
 Supla::EspWebServer::EspWebServer(Supla::HtmlGenerator *generator)
     : WebServer(generator), server(80) {
   serverInstance = this;
@@ -116,6 +120,10 @@ Supla::EspWebServer::EspWebServer(Supla::HtmlGenerator *generator)
 
 Supla::EspWebServer::~EspWebServer() {
   serverInstance = nullptr;
+  if (sendBuf) {
+    delete[] sendBuf;
+    sendBuf = nullptr;
+  }
 }
 
 bool Supla::EspWebServer::handlePost(bool beta) {
@@ -190,6 +198,12 @@ void Supla::EspWebServer::start() {
   }
 
   started = true;
+  if (!sendBuf) {
+    sendBuf = new char[SUPLA_HTML_OUTPUT_BUFFER_SIZE];
+    if (sendBuf) {
+      memset(sendBuf, 0, SUPLA_HTML_OUTPUT_BUFFER_SIZE);
+    }
+  }
 
   SUPLA_LOG_INFO("Starting local web server");
 
@@ -210,32 +224,38 @@ void Supla::EspWebServer::stop() {
   }
 }
 
-Supla::EspSender::EspSender(::ESPWebServer *req) : reqHandler(req) {
+Supla::EspSender::EspSender(::ESPWebServer *req)
+    : reqHandler(req),
+      outputBuffer(serverInstance ? serverInstance->getSendBufPtr() : nullptr,
+                   SUPLA_HTML_OUTPUT_BUFFER_SIZE) {
   reqHandler->setContentLength(CONTENT_LENGTH_UNKNOWN);
   reqHandler->send(200, "text/html", "");
 }
 
 Supla::EspSender::~EspSender() {
+  if (reqHandler && !outputBuffer.error()) {
+    outputBuffer.flush(reqHandler, &EspSender::flushChunk);
+  }
+}
+
+bool Supla::EspSender::flushChunk(void *context, const char *buf, int size) {
+  if (context == nullptr || buf == nullptr || size < 0) {
+    return false;
+  }
+  auto *req = reinterpret_cast<::ESPWebServer *>(context);
+  if (!req->client().connected()) {
+    SUPLA_LOG_WARNING("WebSender error - lost connection");
+    return false;
+  }
+  req->sendContent(buf, size);
+  return true;
 }
 
 void Supla::EspSender::send(const char *buf, int size) {
-  if (error || !buf || !reqHandler) {
+  if (!buf || !reqHandler) {
     return;
   }
-  if (!reqHandler->client().connected()) {
-    SUPLA_LOG_WARNING("WebSender error - lost connection");
-    error = true;
-    return;
-  }
-
-  if (size == -1) {
-    size = strlen(buf);
-  }
-  if (size == 0) {
-    return;
-  }
-
-  reqHandler->sendContent(buf, size);
+  outputBuffer.send(reqHandler, &EspSender::flushChunk, buf, size);
 }
 
 void Supla::EspWebServer::iterateAlways() {

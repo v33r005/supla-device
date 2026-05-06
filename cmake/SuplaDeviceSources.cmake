@@ -74,6 +74,7 @@ set(SUPLA_DEVICE_SRCS
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/html_generator.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/web_server.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/web_sender.cpp
+  ${SUPLA_DEVICE_SRC_DIR}/supla/network/html_output_buffer.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/netif_wifi.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/netif_lan.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/html/device_info.cpp
