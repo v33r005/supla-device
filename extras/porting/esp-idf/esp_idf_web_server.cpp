@@ -441,6 +441,7 @@ esp_err_t rootHandler(httpd_req_t *req) {
       }
       srvInst->dataSaved = false;
     }
+    return ESP_OK;
   } else if (req->method == HTTP_POST) {
     // request: POST /
     SUPLA_LOG_DEBUG("SERVER: post request");
@@ -636,6 +637,7 @@ esp_err_t logsHandler(httpd_req_t *req) {
       }
       srvInst->dataSaved = false;
     }
+    return ESP_OK;
   }
 
   return ESP_FAIL;
