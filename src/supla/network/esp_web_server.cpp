@@ -32,7 +32,6 @@
 #include "esp_web_server.h"
 
 static Supla::EspWebServer *serverInstance = nullptr;
-static int reboot = 0;
 
 void getFavicon() {
   SUPLA_LOG_DEBUG("SERVER: get favicon.ico");
@@ -73,17 +72,12 @@ void postHandler() {
   SUPLA_LOG_DEBUG("SERVER: post request");
   if (serverInstance) {
     if (serverInstance->handlePost()) {
-      // rbt/reboot == 1 is sent by mobile applications. After such a message
-      // they disconnect from device's Wi-Fi, however, ESP32 WebServer
-      // implementation will try to send each chunk of HTML from getHandler
-      // with a very long timeout. In order to prevent the app from hanging,
-      // we skip getHandler in such a case.
-      if (reboot != 1) {
-        // Sending redirect after POST to prevent another POST on page refresh
-        serverInstance->getServerPtr()->sendHeader("Location", "/", true);
-        serverInstance->getServerPtr()->send(
-            303, "text/plain", "Redirecting...");
-      }
+      // Keep the HTTP transaction complete even when a restart is scheduled.
+      // The restart is delayed by handlePost(), so the redirect can still be
+      // delivered before the device goes away.
+      serverInstance->getServerPtr()->sendHeader("Location", "/", true);
+      serverInstance->getServerPtr()->send(
+          303, "text/plain", "Redirecting...");
     } else {
       serverInstance->getServerPtr()->send(
           400, "text/plain", "Invalid POST request");
@@ -164,7 +158,7 @@ bool Supla::EspWebServer::handlePost(bool beta) {
       }
     }
     if (strcmp(server.argName(i).c_str(), "rbt") == 0) {
-      reboot = stringToUInt(server.arg(i).c_str());
+      int reboot = stringToUInt(server.arg(i).c_str());
       SUPLA_LOG_DEBUG("rbt found %d", reboot);
       if (reboot == 2) {
         sdc->scheduleSoftRestart(2500);
