@@ -391,6 +391,7 @@ static bool generateHttpsCertificates(char *serverCert,
   psa_destroy_key(keyId);
   return true;
 #else
+#error "Missing menuconfig flags for certificate generation"
   (void)(serverCert);
   (void)(serverCertLen);
   (void)(prvtKey);
@@ -1748,11 +1749,27 @@ void Supla::EspIdfWebServer::reloadSaltPassword() {
 uint32_t Supla::EspIdfWebServer::getIpFromReq(httpd_req_t *req) {
   uint32_t ip = 0;
   int sockfd = httpd_req_to_sockfd(req);
-  struct sockaddr_in6 addr;
+#if defined(CONFIG_LWIP_IPV6) && CONFIG_LWIP_IPV6
+  struct sockaddr_storage addr = {};
   socklen_t addr_len = sizeof(addr);
-  if (getpeername(sockfd, (struct sockaddr *)&addr, &addr_len) == 0) {
-    ip = ntohl(addr.sin6_addr.un.u32_addr[3]);
+  if (getpeername(
+          sockfd, reinterpret_cast<struct sockaddr *>(&addr), &addr_len) == 0) {
+    if (addr.ss_family == AF_INET6) {
+      auto *addr6 = reinterpret_cast<struct sockaddr_in6 *>(&addr);
+      ip = ntohl(addr6->sin6_addr.un.u32_addr[3]);
+    } else if (addr.ss_family == AF_INET) {
+      auto *addr4 = reinterpret_cast<struct sockaddr_in *>(&addr);
+      ip = ntohl(addr4->sin_addr.s_addr);
+    }
   }
+#else
+  struct sockaddr_in addr = {};
+  socklen_t addr_len = sizeof(addr);
+  if (getpeername(
+          sockfd, reinterpret_cast<struct sockaddr *>(&addr), &addr_len) == 0) {
+    ip = ntohl(addr.sin_addr.s_addr);
+  }
+#endif
 
   return ip;
 }
