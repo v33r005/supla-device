@@ -144,10 +144,14 @@ bool Supla::EspWebServer::handlePost(bool beta) {
     if (strcmp(server.argName(i).c_str(), "csrf") == 0) {
       continue;
     }
+    char redactedValue[Supla::REDACTED_LOG_VALUE_BUFFER_SIZE] = {};
     SUPLA_LOG_DEBUG(
               "SERVER: key %s, value %s",
               server.argName(i).c_str(),
-              server.arg(i).c_str());
+              Supla::redactLogValue(server.argName(i).c_str(),
+                                    server.arg(i).c_str(),
+                                    redactedValue,
+                                    sizeof(redactedValue)));
     for (auto htmlElement = Supla::HtmlElement::begin(); htmlElement;
          htmlElement = htmlElement->next()) {
       if (isSectionAllowed(htmlElement->section)) {

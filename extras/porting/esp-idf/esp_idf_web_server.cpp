@@ -979,8 +979,7 @@ Supla::EspIdfWebServer::PostRequestResult Supla::EspIdfWebServer::handlePost(
       break;
     }
     content[ret] = '\0';
-    SUPLA_LOG_DEBUG(
-        "SERVER: received %d B (cl %d): %s", ret, contentLen, content);
+    SUPLA_LOG_DEBUG("SERVER: received %d B (cl %d)", ret, contentLen);
     contentLen -= ret;
 
     parsePost(content, ret, (contentLen == 0));
@@ -1587,7 +1586,7 @@ bool Supla::EspIdfWebServer::login(httpd_req_t *req,
       SUPLA_LOG_DEBUG("SERVER: setting session cookie");
       httpd_resp_set_hdr(req, "Auth-Status", "ok");
       setSessionCookie(req, sessionCookie, sessionCookieLen);
-      SUPLA_LOG_INFO("Login successful (%s)", sessionCookie);
+      SUPLA_LOG_INFO("Login successful");
       return true;
     }
     httpd_resp_set_hdr(req, "Auth-Status", "failed");
@@ -1619,7 +1618,6 @@ void Supla::EspIdfWebServer::setSessionCookie(httpd_req_t *req,
            "session=%s|%s; Path=/; HttpOnly; Secure",
            timestampStr,
            sessionHmacHex);
-  SUPLA_LOG_DEBUG("SERVER: Set-Cookie: %s", buf);
   httpd_resp_set_hdr(req, "Set-Cookie", buf);
 }
 

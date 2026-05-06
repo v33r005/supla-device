@@ -19,6 +19,7 @@
 #ifndef SRC_SUPLA_NETWORK_WEB_SERVER_H_
 #define SRC_SUPLA_NETWORK_WEB_SERVER_H_
 
+#include <stddef.h>
 #include <supla/network/html_generator.h>
 #include <supla/network/html_element.h>
 #include <supla/device/security_logger.h>
@@ -32,6 +33,13 @@ class SuplaDeviceClass;
 namespace Supla {
 
 extern const unsigned char favico[1150];
+constexpr size_t REDACTED_LOG_VALUE_BUFFER_SIZE = 32;
+
+bool isSensitiveLogField(const char *key);
+const char *redactLogValue(const char *key,
+                           const char *value,
+                           char *buffer,
+                           size_t bufferSize);
 
 class WebServer {
  public:
