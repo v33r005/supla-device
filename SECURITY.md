@@ -59,7 +59,37 @@ As a result:
 - devices built using Arduino should not be considered resistant to physical access attacks,
 - stored credentials may be recoverable by an attacker with direct access to device memory.
 
-This is a limitation of the deployment model and platform configuration, not a vulnerability in the SDK itself.
+These limitations are inherent to the selected platform and deployment model.
+
+### Provisioning Interfaces and HTTP Configuration Server
+
+In Arduino-based builds (ESP8266 and ESP32 Arduino), the optional configuration interface is intended primarily for DIY, development, testing, and device provisioning scenarios.
+
+On resource-constrained targets such as ESP8266, HTTPS/TLS protection for the embedded configuration server is generally not feasible due to RAM, flash, and CPU limitations. As a result, the configuration interface may operate over plain HTTP.
+
+Current Arduino-based implementations may expose the HTTP configuration interface without authentication while a temporary provisioning mode is active. This behavior is a limitation of the current Arduino support path and is not considered a production-grade security model.
+
+For this reason, Arduino-based deployments should not be considered suitable for hostile, untrusted, or publicly exposed network environments.
+
+The recommended deployment model is:
+
+- the configuration Access Point (AP) is started only after explicit local user action (for example, a hardware button press or equivalent local recovery mechanism),
+- the AP is enabled temporarily for provisioning purposes only,
+- the AP automatically shuts down after a limited time,
+- the HTTP configuration server is active only while the provisioning mode is enabled.
+
+The framework includes development and fallback options that may allow:
+
+- automatic startup of a configuration AP on unconfigured devices,
+- operation of the HTTP configuration server during normal LAN operation.
+
+These modes are intended for development, debugging, testing, or recovery scenarios and are not recommended for commercial or production deployments.
+
+Integrators and device manufacturers are responsible for selecting an appropriate provisioning model and disabling development-oriented configuration modes in production firmware.
+
+The framework may emit runtime diagnostic and self-test warnings when insecure configuration patterns are detected.
+
+Commercial and production deployments are expected to use ESP-IDF-based configurations with platform-supported security features and controlled provisioning flows.
 
 ### Responsibility of integrators
 
