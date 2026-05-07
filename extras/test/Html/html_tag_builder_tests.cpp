@@ -249,6 +249,7 @@ TEST_F(HtmlTagBuilderTests, ParsePostRequiresValidCsrfFirstField) {
   server.parsePost(validBody.c_str(), validBody.size(), true);
   EXPECT_EQ(element.handledCount, 1);
   EXPECT_EQ(element.lastKey, "foo");
+  server.resetParser();
 }
 
 TEST_F(HtmlTagBuilderTests, WifiParametersRegressionBeforeRefactor) {

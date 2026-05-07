@@ -808,11 +808,12 @@ esp_err_t Supla::EspIdfWebServer::redirect(httpd_req_t *req,
     if (strcmp(cookieRedirect, "deleted") == 0) {
       maxAge = 0;
     }
-    snprintf(buf,
-             sizeof(buf),
-             "redirect_to=%s; Path=/; HttpOnly; Secure; Max-Age=%d",
-             cookieRedirect,
-             maxAge);
+    snprintf(
+        buf,
+        sizeof(buf),
+        "redirect_to=%s; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=%d",
+        cookieRedirect,
+        maxAge);
     httpd_resp_set_hdr(req, "Set-Cookie", buf);
     SUPLA_LOG_DEBUG("SERVER: Set-Cookie: %s", buf);
   }
@@ -1615,7 +1616,7 @@ void Supla::EspIdfWebServer::setSessionCookie(httpd_req_t *req,
 
   snprintf(buf,
            bufLen,
-           "session=%s|%s; Path=/; HttpOnly; Secure",
+           "session=%s|%s; Path=/; HttpOnly; Secure; SameSite=Lax",
            timestampStr,
            sessionHmacHex);
   httpd_resp_set_hdr(req, "Set-Cookie", buf);
@@ -1623,9 +1624,10 @@ void Supla::EspIdfWebServer::setSessionCookie(httpd_req_t *req,
 
 void Supla::EspIdfWebServer::handleLogout(httpd_req_t *req) {
   // delete session cookie
-  httpd_resp_set_hdr(req,
-                     "Set-Cookie",
-                     "session=deleted; Path=/; HttpOnly; Secure; Max-Age=0");
+  httpd_resp_set_hdr(
+      req,
+      "Set-Cookie",
+      "session=deleted; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
 }
 
 Supla::SetupRequestResult Supla::EspIdfWebServer::handleSetup(

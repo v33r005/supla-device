@@ -249,9 +249,7 @@ void Supla::WebServer::parsePost(const char *postContent,
     if (!lastChunk) {
       return;
     }
-    if (lastChunk) {
-      resetParser();
-    }
+    cleanupParser();
     return;
   }
 
@@ -363,6 +361,7 @@ void Supla::WebServer::parsePost(const char *postContent,
     }
 
     if (csrfRejected || !csrfValidated) {
+      cleanupParser();
       return;
     }
 
@@ -370,6 +369,8 @@ void Supla::WebServer::parsePost(const char *postContent,
       Supla::Storage::ConfigInstance()->commit();
       sdc->disableLocalActionsIfNeeded();
     }
+
+    cleanupParser();
   }
 }
 
@@ -382,6 +383,14 @@ void Supla::WebServer::resetParser() {
   betaProcessing = false;
   csrfValidated = false;
   csrfRejected = false;
+}
+
+void Supla::WebServer::cleanupParser() {
+  partialSize = 0;
+  keyFound = false;
+  memset(key, 0, HTML_KEY_LENGTH);
+  delete[] value;
+  value = nullptr;
 }
 
 bool Supla::WebServer::isSectionAllowed(Supla::HtmlSection section) const {

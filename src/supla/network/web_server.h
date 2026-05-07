@@ -83,6 +83,7 @@ class WebServer {
    * @return true if section is allowed to be processed
    */
   bool isSectionAllowed(Supla::HtmlSection section) const;
+  void cleanupParser();
 
   static WebServer *webServerInstance;
   bool destroyGenerator = false;
