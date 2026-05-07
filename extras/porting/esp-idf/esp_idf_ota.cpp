@@ -22,6 +22,7 @@
 #include <esp_idf_ota.h>
 #include <esp_ota_ops.h>
 #include <esp_task_wdt.h>
+#include <mbedtls/x509.h>
 #include <stdio.h>
 #include <supla-common/log.h>
 #include <supla/device/register_device.h>
@@ -31,13 +32,42 @@
 #include <supla/sha256.h>
 #include <supla/time.h>
 #include <supla/tools.h>
-#include <mbedtls/x509.h>
 
 #include <cerrno>
 
 #include "supla/device/sw_update.h"
 
 #define BUFFER_SIZE 4096
+
+namespace {
+
+constexpr size_t UPDATE_URL_REWRITE_BUFFER_SIZE = 256;
+
+const char *rewriteUpdateHost(const char *url,
+                              char *buffer,
+                              size_t bufferSize) {
+  if (url == nullptr || buffer == nullptr || bufferSize == 0) {
+    return url;
+  }
+
+  static const char oldHost[] = "https://updates.supla.org";
+  static const char newHost[] = "https://iot.updates.supla.org";
+  size_t oldHostLen = sizeof(oldHost) - 1;
+
+  if (strncmp(url, oldHost, oldHostLen) != 0) {
+    return url;
+  }
+
+  int written = snprintf(buffer, bufferSize, "%s%s", newHost, url + oldHostLen);
+  if (written < 0 || static_cast<size_t>(written) >= bufferSize) {
+    SUPLA_LOG_WARNING("SW update: failed to rewrite update host");
+    return url;
+  }
+
+  return buffer;
+}
+
+}  // namespace
 
 static void formatHttpClientError(const char *prefix,
                                   esp_http_client_handle_t client,
@@ -340,6 +370,9 @@ void Supla::EspIdfOta::iterate() {
     cJSON *url = cJSON_GetObjectItemCaseSensitive(latestUpdate, "updateUrl");
     if (cJSON_IsString(version) && (version->valuestring != NULL) &&
         cJSON_IsString(url) && (url->valuestring != NULL)) {
+      char rewrittenUrl[UPDATE_URL_REWRITE_BUFFER_SIZE] = {};
+      const char *effectiveUrl = rewriteUpdateHost(
+          url->valuestring, rewrittenUrl, sizeof(rewrittenUrl));
       if (mode == Supla::SwUpdateMode::PeriodicCheckAndUpdate) {
         mode = Supla::SwUpdateMode::CheckAndUpdate;
       }
@@ -347,7 +380,7 @@ void Supla::EspIdfOta::iterate() {
           buf, BUF_SIZE, "SW update new version: %s", version->valuestring);
       SUPLA_LOG_INFO("%s", buf);
       log(buf);
-      snprintf(buf, BUF_SIZE, "SW update url: \"%s\"", url->valuestring);
+      snprintf(buf, BUF_SIZE, "SW update url: \"%s\"", effectiveUrl);
       SUPLA_LOG_INFO("%s", buf);
       log(buf);
 
@@ -365,29 +398,34 @@ void Supla::EspIdfOta::iterate() {
       if (updateUrl) {
         delete[] updateUrl;
       }
-      int urlLen = strlen(url->valuestring) + 1;
+      int urlLen = strlen(effectiveUrl) + 1;
       updateUrl = new char[urlLen];
       if (updateUrl == nullptr) {
         fail("SW update: failed to allocate memory");
         cJSON_Delete(json);
         return;
       }
-      snprintf(updateUrl, urlLen, "%s", url->valuestring);
+      snprintf(updateUrl, urlLen, "%s", effectiveUrl);
 
       // copy changelogUrl parameter (if available)
       cJSON *changelogUrlJson =
           cJSON_GetObjectItemCaseSensitive(latestUpdate, "changelogUrl");
       if (cJSON_IsString(changelogUrlJson) &&
           (changelogUrlJson->valuestring != NULL)) {
+        char rewrittenChangelogUrl[UPDATE_URL_REWRITE_BUFFER_SIZE] = {};
+        const char *effectiveChangelogUrl =
+            rewriteUpdateHost(changelogUrlJson->valuestring,
+                              rewrittenChangelogUrl,
+                              sizeof(rewrittenChangelogUrl));
         if (changelogUrl) {
           delete[] changelogUrl;
         }
 
-        int urlLen = strlen(changelogUrlJson->valuestring) + 1;
+        int urlLen = strlen(effectiveChangelogUrl) + 1;
         if (urlLen < SUPLA_URL_PATH_MAXSIZE) {
           changelogUrl = new char[urlLen];
           if (changelogUrl) {
-            snprintf(changelogUrl, urlLen, "%s", changelogUrlJson->valuestring);
+            snprintf(changelogUrl, urlLen, "%s", effectiveChangelogUrl);
           }
         } else {
           SUPLA_LOG_WARNING("SW update: changelogUrl too long, skipping");
