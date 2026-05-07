@@ -46,6 +46,7 @@
 
 #include <SuplaDevice.h>
 #include <supla/network/esp_wifi.h>
+#include <supla/network/network.h>
 #include <supla/version.h>
 #include <supla/sensor/BME280.h>
 #include <supla/storage/storage.h>
@@ -67,6 +68,17 @@ Supla::ESPWifi wifi;
 Supla::LittleFsConfig configSupla;
 
 Supla::EspWebServer suplaServer;
+
+static bool localWebServerStarted = false;
+
+static void ensureLocalWebServerStarted() {
+  if (!localWebServerStarted && Supla::Network::IsReady()) {
+    // Debug/DIY only: this exposes the local config web UI on the operational
+    // network without authentication. Do not use in real deployed devices.
+    suplaServer.start();
+    localWebServerStarted = true;
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -118,10 +130,10 @@ void setup() {
   SuplaDevice.setSwVersion(SUPLA_SHORT_VERSION);
   SuplaDevice.setName(DEV_NAME);
   SuplaDevice.setInitialMode(Supla::InitialMode::StartInCfgMode);
-  SuplaDevice.setPermanentWebInterface();
   SuplaDevice.begin();
 }
 
 void loop() {
   SuplaDevice.iterate();
+  ensureLocalWebServerStarted();
 }
