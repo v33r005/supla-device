@@ -58,31 +58,40 @@ void PwmFrequencyParameters::send(Supla::WebSender* sender) {
     frequency = rgbCct->getPwmFrequency();
     frequencyStep = rgbCct->getStepPwmFrequency();
   }
-  sender->labeledField(
-      Supla::ConfigTag::PwmFrequencyTag,
-      "PWM frequency [Hz] (reboot required to take effect)", [&]() {
-        sender->numberInput(
-            Supla::ConfigTag::PwmFrequencyTag,
-            Supla::NumericInputSpec{
-                .min = static_cast<int>(minFrequency),
-                .max = static_cast<int>(maxFrequency),
-                .value = static_cast<int>(frequency),
-                .step = static_cast<int>(frequencyStep),
-            });
-      });
+  sender->labeledField(Supla::ConfigTag::PwmFrequencyTag,
+                       "PWM frequency [Hz] (reboot required to take effect)",
+                       [&]() {
+                         sender->numberInput(
+                             Supla::ConfigTag::PwmFrequencyTag,
+                             Supla::NumericInputSpec{
+                                 .min = static_cast<int>(minFrequency),
+                                 .max = static_cast<int>(maxFrequency),
+                                 .value = static_cast<int>(frequency),
+                                 .step = static_cast<int>(frequencyStep),
+                             });
+                       });
 }
 
 bool PwmFrequencyParameters::handleResponse(const char* key,
                                             const char* value) {
   if (strcmp(key, Supla::ConfigTag::PwmFrequencyTag) == 0) {
     uint32_t pwmFrequency = stringToUInt(value);
-    // setPwmFrequency() will apply validation and will correct pwmFrequency
-    // to allowed value
     if (pwmFrequency > UINT16_MAX) {
       pwmFrequency = UINT16_MAX;
     }
-    rgbCct->setPwmFrequency(pwmFrequency);
-    pwmFrequency = rgbCct->getPwmFrequency();
+
+    if (rgbCct) {
+      // setPwmFrequency() will apply validation and will correct
+      // pwmFrequency to allowed value
+      rgbCct->setPwmFrequency(pwmFrequency);
+      pwmFrequency = rgbCct->getPwmFrequency();
+    } else {
+      pwmFrequency = Supla::Control::LightingPwmBase::normalizePwmFrequency(
+          static_cast<uint16_t>(pwmFrequency),
+          PWM_FREQUENCY_MIN,
+          PWM_FREQUENCY_MAX,
+          PWM_FREQUENCY_STEP);
+    }
 
     auto cfg = Supla::Storage::ConfigInstance();
     if (cfg) {

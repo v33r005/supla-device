@@ -984,6 +984,11 @@ TEST_F(HtmlCaptureTest, PwmFrequencyParametersRendersDefaultRange) {
             "</div>");
 }
 
+TEST_F(HtmlCaptureTest, PwmFrequencyParametersHandlesResponseWithoutRgbCct) {
+  Supla::Html::PwmFrequencyParameters param(nullptr);
+  EXPECT_TRUE(param.handleResponse(Supla::ConfigTag::PwmFrequencyTag, "2345"));
+}
+
 TEST_F(HtmlCaptureTest, RgbwButtonParametersRendersDefaultOptions) {
   ConfigMock cfg;
   SenderMock sender;

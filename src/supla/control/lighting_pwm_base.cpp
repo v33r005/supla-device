@@ -1638,21 +1638,31 @@ void LightingPwmBase::setPwmResolutionBits(uint8_t resolutionBits) {
 }
 
 void LightingPwmBase::setPwmFrequency(uint16_t frequency) {
+  pwmFrequency = normalizePwmFrequency(
+      frequency, minPwmFrequency, maxPwmFrequency, stepPwmFrequency);
+
+  SUPLA_LOG_INFO(
+      "Light[%d] PWM frequency set to %d", getChannelNumber(), pwmFrequency);
+}
+
+uint16_t LightingPwmBase::normalizePwmFrequency(uint16_t frequency,
+                                                uint16_t minPwmFrequency,
+                                                uint16_t maxPwmFrequency,
+                                                uint16_t stepPwmFrequency) {
   if (frequency < minPwmFrequency) {
     frequency = minPwmFrequency;
   } else if (frequency > maxPwmFrequency) {
     frequency = maxPwmFrequency;
   }
 
-  if ((frequency - minPwmFrequency) % stepPwmFrequency != 0) {
+  if (stepPwmFrequency != 0 &&
+      (frequency - minPwmFrequency) % stepPwmFrequency != 0) {
     frequency =
         minPwmFrequency +
         ((frequency - minPwmFrequency) / stepPwmFrequency) * stepPwmFrequency;
   }
 
-  pwmFrequency = frequency;
-  SUPLA_LOG_INFO(
-      "Light[%d] PWM frequency set to %d", getChannelNumber(), pwmFrequency);
+  return frequency;
 }
 
 uint16_t LightingPwmBase::getMinPwmFrequency() const {

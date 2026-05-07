@@ -193,6 +193,21 @@ class LightingPwmBase : public ChannelElement, public ActionHandler {
   void setPwmFrequency(uint16_t pwmFrequency);
 
   /**
+   * Applies the same PWM frequency validation as setPwmFrequency().
+   *
+   * @param pwmFrequency [Hz]
+   * @param minPwmFrequency minimum allowed frequency [Hz]
+   * @param maxPwmFrequency maximum allowed frequency [Hz]
+   * @param stepPwmFrequency step between allowed frequencies [Hz]
+   *
+   * @return corrected PWM frequency [Hz]
+   */
+  static uint16_t normalizePwmFrequency(uint16_t pwmFrequency,
+                                        uint16_t minPwmFrequency,
+                                        uint16_t maxPwmFrequency,
+                                        uint16_t stepPwmFrequency);
+
+  /**
    * Sets PWM frequency step.
    * This will only set class member. Actual usage of PWM frequency settings
    * depends on RGBCCT object implementation.

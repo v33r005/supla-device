@@ -857,6 +857,21 @@ TEST(RgbwPwmBaseTests, LoadConfigForwardsPwmResolutionBitsAndFrequencyToIo) {
   pwm.onLoadConfig(nullptr);
 }
 
+TEST(RgbwPwmBaseTests, NormalizePwmFrequencyClampsAndRounds) {
+  EXPECT_EQ(100U,
+            Supla::Control::LightingPwmBase::normalizePwmFrequency(
+                20, 100, 9000, 1));
+  EXPECT_EQ(9000U,
+            Supla::Control::LightingPwmBase::normalizePwmFrequency(
+                12000, 100, 9000, 1));
+  EXPECT_EQ(2300U,
+            Supla::Control::LightingPwmBase::normalizePwmFrequency(
+                2345, 100, 9000, 100));
+  EXPECT_EQ(2345U,
+            Supla::Control::LightingPwmBase::normalizePwmFrequency(
+                2345, 100, 9000, 0));
+}
+
 TEST(RgbwPwmBaseTests, TinyTimerStepsAccumulateIntoDutyUpdates) {
   Supla::Channel::resetToDefaults();
   SimpleTime time;
