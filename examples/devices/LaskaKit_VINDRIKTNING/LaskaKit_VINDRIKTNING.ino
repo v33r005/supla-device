@@ -87,6 +87,8 @@ void setup() {
   new Supla::Html::DeviceInfo(&SuplaDevice);
   new Supla::Html::WifiParameters;
   new Supla::Html::ProtocolParameters;
+  // Debug/DIY only: ButtonUpdate exposes an unauthenticated OTA endpoint.
+  // Do not use it on real devices or untrusted networks.
   new Supla::Html::ButtonUpdate(&suplaServer);
 
   // I2C start & scan

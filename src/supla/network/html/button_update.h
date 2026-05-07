@@ -19,6 +19,10 @@
 #ifndef SRC_SUPLA_NETWORK_HTML_BUTTON_UPDATE_H_
 #define SRC_SUPLA_NETWORK_HTML_BUTTON_UPDATE_H_
 
+#if !defined(ARDUINO) && !defined(SUPLA_TEST)
+#error "ButtonUpdate is Arduino-only and intended for debug/DIY usage."
+#endif
+
 #include <supla/network/html_element.h>
 
 namespace Supla {
