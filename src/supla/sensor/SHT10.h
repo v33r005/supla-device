@@ -21,7 +21,7 @@
 
 #include <Arduino.h>
 #include <supla/sensor/therm_hygro_meter.h>
-#include <SHT1x-ESP.h>  // SHT1x sensor library for ESPx by beegee_tokyo
+#include <SHT1x-ESP.h>  // https://github.com/beegee-tokyo/SHT1x-ESP
 // data pin pulled up with 10k resistor
 
 namespace Supla {
@@ -58,8 +58,6 @@ class SHT10 : public ThermHygroMeter {
 
   void onInit() {
     channel.setNewValue(getTemp(), getHumi());
-    SHT1x::TemperatureMeasurementResolution::Temperature_12bit;
-    SHT1x::HumidityMeasurementResolution::Humidity_8bit;
   }
 
  protected:

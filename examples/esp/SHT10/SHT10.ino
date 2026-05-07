@@ -16,6 +16,18 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
+/**
+ * @file SHT10.ino
+ * @author veeroos
+ * @brief Example of connecting an SHT10 temperature and humidity sensor to SUPLA using an ESP32.
+ * This example configures an ESP device with Wi-Fi to read data from an SHT10 sensor and integrate it with the SUPLA cloud.
+ * It includes a web server for Wi-Fi and SUPLA server configuration.
+ * It requires the SHT1x sensor library for ESPx by beegee_tokyo to be installed from Arduino library or https://github.com/beegee-tokyo/SHT1x-ESP
+ * Users need to adjust network settings. A status LED is also configured.
+ *
+ * @tags SHT10, temperature, humidity, sensor, esp, esp32, wifi
+ */
+
 #define STATUS_LED_GPIO 2
 #define BUTTON_CFG_GPIO 0
 #define Data_Pin_ 4
@@ -63,8 +75,7 @@ void setup() {
   new Supla::Sensor::SHT10(Data_Pin_, Clock_Pin_);
 
   buttonCfg->configureAsConfigButton(&SuplaDevice);
-
-  SuplaDevice.setInitialMode(Supla::InitialMode::StartInCfgMode);
+  //SuplaDevice.setInitialMode(Supla::InitialMode::StartInCfgMode); //This option will enter configuration mode after ESP startup. Using it is insecure  
   SuplaDevice.begin();
 }
 
