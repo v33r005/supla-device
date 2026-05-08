@@ -73,6 +73,7 @@ file(GLOB TEST_SRC CONFIGURE_DEPENDS
   RelayTests/*.cpp
   GpmTests/*.cpp
   SwUpdateTests/*.cpp
+  ModbusTests/*.cpp
   )
 
 file(GLOB SD4LINUX_TEST_SRC CONFIGURE_DEPENDS
