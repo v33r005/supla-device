@@ -249,6 +249,12 @@ int Element::handleCalcfgFromServer(TSD_DeviceCalCfgRequest *request) {
   return SUPLA_CALCFG_RESULT_NOT_SUPPORTED;
 }
 
+uint32_t Element::getCalcfgPendingTimeoutMs(
+    TSD_DeviceCalCfgRequest *request) const {
+  (void)(request);
+  return 0;
+}
+
 Element & Element::disableChannelState() {
   if (getChannel()) {
     getChannel()->unsetFlag(SUPLA_CHANNEL_FLAG_CHANNELSTATE);
