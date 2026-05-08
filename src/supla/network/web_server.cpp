@@ -323,6 +323,7 @@ void Supla::WebServer::parsePost(const char *postContent,
         urlDecodeInplace(value, HTML_VAL_LENGTH);
         // handle key value here
         char redactedValue[REDACTED_LOG_VALUE_BUFFER_SIZE] = {};
+        (void)(redactedValue);
         SUPLA_LOG_DEBUG("SERVER: key %s, value %s", key,
                         redactLogValue(key, value, redactedValue,
                                        sizeof(redactedValue)));
