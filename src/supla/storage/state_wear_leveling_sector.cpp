@@ -32,12 +32,6 @@ StateWearLevelingSector::StateWearLevelingSector(Storage *storage,
   StateStorageInterface(storage, STORAGE_SECTION_TYPE_ELEMENT_STATE_WL_SECTOR),
   sectionOffset(offset),
   availableSize(availableSize) {
-  int amountOfSectors = availableSize / getSectorSize();
-
-  if (amountOfSectors >= 4) {
-    lastValidAddress =
-      getFirstSlotAddress() + (amountOfSectors - 2) * getSectorSize() - 1;
-  }
   currentSlotAddress = getFirstSlotAddress();
   lastStoredSlotAddress = currentSlotAddress;
 }
@@ -144,6 +138,30 @@ bool StateWearLevelingSector::tryLoadPreamblesFrom(uint32_t offset) {
 
       elementStateSize =
           sectorConfig.stateSlotSize - sizeof(StateWlSectorHeader);
+      uint32_t maxSlotCount = getMaxSlotCount();
+      if (maxSlotCount == 0 || elementStateSize == 0) {
+        SUPLA_LOG_WARNING("Storage: invalid state slot capacity");
+        return false;
+      }
+      uint32_t slotStorageBytes = maxSlotCount * slotSize();
+      uint32_t partitionSlotAreaBytes =
+          availableSize - 2 * getSectorSize();
+      SUPLA_LOG_INFO(
+          "Storage state sector layout: partition=%u B, slot area=%u B, "
+          "slot size=%u B, slots=%u",
+          availableSize,
+          slotStorageBytes,
+          slotSize(),
+          maxSlotCount);
+      if (slotStorageBytes < partitionSlotAreaBytes) {
+        SUPLA_LOG_WARNING(
+            "Storage state sector bitmap limits slot writes to %u B out of "
+            "%u B available for slots",
+            slotStorageBytes,
+            partitionSlotAreaBytes);
+      }
+      lastValidAddress =
+          getFirstSlotAddress() + (maxSlotCount - 1) * slotSize();
 
       // read current slot id
       uint8_t bitmap = 0;
@@ -202,6 +220,17 @@ uint32_t StateWearLevelingSector::getNextSlotAddress(
   }
 
   return nextAddress;
+}
+
+uint32_t StateWearLevelingSector::getMaxSlotCount() const {
+  uint32_t bitmapBytes =
+      getSectorSize() - (sectionOffset % getSectorSize()) -
+      sizeof(Supla::SectionPreamble) - sizeof(Supla::StateWlSectorConfig);
+  if (bitmapBytes == 0 || slotSize() == 0) {
+    return 0;
+  }
+
+  return bitmapBytes * 8;
 }
 
 uint32_t StateWearLevelingSector::getPreviousSlotAddress(
@@ -682,6 +711,10 @@ bool StateWearLevelingSector::finalizeSizeCheck() {
     currentSlotAddress = getFirstSlotAddress();
     lastStoredSlotAddress = currentSlotAddress;
     currentSlotPreparedForFirstWrite = true;
+    uint32_t maxSlotCount = getMaxSlotCount();
+    lastValidAddress = (maxSlotCount == 0)
+        ? 0
+        : getFirstSlotAddress() + (maxSlotCount - 1) * slotSize();
     eraseSector(getFirstSlotAddress(), getSectorSize());
     return false;
   }

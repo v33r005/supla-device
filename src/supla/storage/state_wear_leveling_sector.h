@@ -106,6 +106,7 @@ class StateWearLevelingSector : public StateStorageInterface {
   bool tryLoadPreamblesFrom(uint32_t offset);
   bool isDataDifferent(uint32_t address, const uint8_t *data, uint32_t size);
   bool isSlotValid(uint32_t address, uint8_t *buffer);
+  uint32_t getMaxSlotCount() const;
   int getSlotSize() const;
   uint32_t getFirstSlotAddress() const;
   uint32_t getNextSlotAddress(uint32_t slotAddress) const;

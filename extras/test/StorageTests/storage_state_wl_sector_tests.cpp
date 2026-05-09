@@ -30,6 +30,7 @@
 // using ::testing::AtLeast;
 
 #define SMALL_FLASH_SIZE (5*4096)
+#define BIG_FLASH_SIZE 0x80000
 
 TEST(StorageStateWlSectorTests, preambleInitializationSizeIsZero) {
   EXPECT_FALSE(Supla::Storage::Init());
@@ -586,4 +587,50 @@ TEST(StorageStateWlSectorTests,
   Supla::Storage::LoadStateStorage();
 
   EXPECT_EQ(el.stateValue, 123456);
+}
+
+TEST(StorageStateWlSectorTests, bigSizedStorageShouldNotOverflowBitmap) {
+  EXPECT_FALSE(Supla::Storage::Init());
+
+  ElementWithStorage el1;
+  ElementWithStorage el2;
+
+  StorageMockFlashSimulator storage(
+      0, BIG_FLASH_SIZE, Supla::Storage::WearLevelingMode::SECTOR_WRITE_MODE);
+
+  EXPECT_CALL(storage, commit()).Times(0);
+
+  EXPECT_TRUE(storage.isEmpty());
+  EXPECT_TRUE(Supla::Storage::Init());
+
+  EXPECT_FALSE(Supla::Storage::IsStateStorageValid());
+  Supla::Storage::WriteStateStorage();
+
+  auto sectorConfig = storage.getStateWlSectorConfig();
+  EXPECT_EQ(sectorConfig->stateSlotSize,
+            2 + 2 * sizeof(el1.stateValue));
+
+  const uint32_t bitmapOffset = sizeof(Supla::Preamble) +
+      sizeof(Supla::SectionPreamble) +
+      sizeof(Supla::StateWlSectorConfig);
+  const int bitmapBytesBeforeBackupSection =
+      4096 - bitmapOffset;
+  const int firstSlotOverlappingBackupSection =
+      bitmapBytesBeforeBackupSection * 8;
+  for (int i = 1; i <= firstSlotOverlappingBackupSection; i++) {
+    el1.stateValue = i;
+    el2.stateValue = i + 1;
+    Supla::Storage::WriteStateStorage();
+  }
+
+  Supla::Storage::storageInitDone = false;
+  EXPECT_TRUE(Supla::Storage::Init());
+  EXPECT_TRUE(Supla::Storage::IsStateStorageValid());
+
+  el1.stateValue = 0;
+  el2.stateValue = 0;
+  Supla::Storage::LoadStateStorage();
+
+  EXPECT_EQ(el1.stateValue, firstSlotOverlappingBackupSection);
+  EXPECT_EQ(el2.stateValue, firstSlotOverlappingBackupSection + 1);
 }
