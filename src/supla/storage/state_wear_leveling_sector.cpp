@@ -204,6 +204,53 @@ uint32_t StateWearLevelingSector::getNextSlotAddress(
   return nextAddress;
 }
 
+uint32_t StateWearLevelingSector::getPreviousSlotAddress(
+    uint32_t slotAddress) const {
+  if (lastValidAddress == 0) {
+    return 0;
+  }
+
+  uint32_t firstSlotAddress = getFirstSlotAddress();
+  if (slotAddress <= firstSlotAddress) {
+    uint32_t currentAddress = firstSlotAddress;
+    uint32_t previousAddress = firstSlotAddress;
+    do {
+      previousAddress = currentAddress;
+      currentAddress = getNextSlotAddress(currentAddress);
+    } while (currentAddress != firstSlotAddress);
+    return previousAddress;
+  }
+
+  return slotAddress - slotSize();
+}
+
+bool StateWearLevelingSector::isSlotValid(uint32_t address, uint8_t *buffer) {
+  if (buffer == nullptr || elementStateSize == 0xFFFF) {
+    return false;
+  }
+
+  StateWlSectorHeader header = {};
+  memcpy(&header, buffer, sizeof(header));
+
+  uint16_t calculatedCrc = 0xFFFF;
+  for (uint32_t i = 0; i < elementStateSize; i++) {
+    calculatedCrc = crc16_update(
+        calculatedCrc,
+        buffer[sizeof(StateWlSectorHeader) + i]);
+  }
+
+  if (calculatedCrc != header.crc) {
+    SUPLA_LOG_WARNING(
+        "WearLevelingSector: invalid slot crc at %d (stored=%d calc=%d)",
+        address,
+        header.crc,
+        calculatedCrc);
+    return false;
+  }
+
+  return true;
+}
+
 /*
 1. check if section preamble is valid
 2. check if StateWlSectorConfig is valid (element size + own crc)
@@ -456,6 +503,26 @@ bool StateWearLevelingSector::prepareLoadState() {
   dataBuffer = new uint8_t[slotSize()];
   memset(dataBuffer, 0, slotSize());
   readStorage(currentSlotAddress, dataBuffer, slotSize(), false);
+  if (!isSlotValid(currentSlotAddress, dataBuffer)) {
+    uint32_t previousSlotAddress = getPreviousSlotAddress(currentSlotAddress);
+    if (previousSlotAddress != 0 &&
+        previousSlotAddress != currentSlotAddress) {
+      SUPLA_LOG_WARNING(
+          "WearLevelingSector: falling back from slot %d to previous slot %d",
+          currentSlotAddress,
+          previousSlotAddress);
+      memset(dataBuffer, 0, slotSize());
+      readStorage(previousSlotAddress, dataBuffer, slotSize(), false);
+      if (isSlotValid(previousSlotAddress, dataBuffer)) {
+        currentSlotAddress = previousSlotAddress;
+      }
+    }
+  }
+  if (!isSlotValid(currentSlotAddress, dataBuffer)) {
+    SUPLA_LOG_ERROR("WearLevelingSector: no valid state slot found");
+    elementStateCrcCValid = false;
+    return false;
+  }
   stateSlotNewSize = 0;
   currentStateBufferOffset = 0;
   currentStateBufferOffset += sizeof(StateWlSectorHeader);
@@ -540,7 +607,11 @@ bool StateWearLevelingSector::finalizeSaveState() {
     // Data changed, check if next sector has to be erased
     do {
       uint32_t previousSlotAddress = currentSlotAddress;
-      currentSlotAddress = getNextSlotAddress(currentSlotAddress);
+      if (currentSlotPreparedForFirstWrite) {
+        currentSlotPreparedForFirstWrite = false;
+      } else {
+        currentSlotAddress = getNextSlotAddress(currentSlotAddress);
+      }
 
       int previousSlotEndAtSector =
           (previousSlotAddress + slotSize() - 1) / getSectorSize();
@@ -610,6 +681,7 @@ bool StateWearLevelingSector::finalizeSizeCheck() {
     elementStateCrcCValid = false;
     currentSlotAddress = getFirstSlotAddress();
     lastStoredSlotAddress = currentSlotAddress;
+    currentSlotPreparedForFirstWrite = true;
     eraseSector(getFirstSlotAddress(), getSectorSize());
     return false;
   }
