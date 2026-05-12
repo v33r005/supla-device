@@ -19,10 +19,10 @@
 #ifndef SRC_SUPLA_CONTROL_LIGHTING_PWM_LEDS_H_
 #define SRC_SUPLA_CONTROL_LIGHTING_PWM_LEDS_H_
 
-#include "lighting_pwm_base.h"
-
 #include <stdint.h>
 #include <supla/io.h>
+
+#include "lighting_pwm_base.h"
 
 namespace Supla {
 namespace Control {
@@ -48,20 +48,20 @@ class LightingPwmLeds : public LightingPwmBase {
   void onInit() override;
   void onLoadConfig(SuplaDeviceClass *sdc) override;
 
-  void setOutputIo(int outputIndex, Supla::Io::Base *io);
-  Supla::Io::Base *getOutputIo(int outputIndex) const;
-  int getOutputPin(int outputIndex) const;
-
  protected:
-  void applyPwmFrequencyToOutputs();
-  void applyDefaultChannelFunctions();
-  int getConfiguredOutputsCount() const;
-
   struct OutputState {
     Supla::Io::IoPin pin;
     int32_t lastSourceValue = -1;
     int32_t lastDutyValue = -1;
   };
+
+  void applyPwmResolutionBitsToOutputs();
+  void applyPwmFrequencyToOutputs();
+  void applyDefaultChannelFunctions();
+  int getConfiguredOutputsCount() const;
+  uint8_t getPwmResolutionBitsForOutput(const OutputState &output) const;
+  uint32_t getPwmMaxValueForOutput(const OutputState &output) const;
+  bool isOutputSharedWithParent(const OutputState &output) const;
 
   OutputState outputs[kMaxOutputs];
   int tryCounter = 0;

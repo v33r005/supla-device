@@ -12,6 +12,7 @@ set(SUPLA_DEVICE_SRCS
   ${SUPLA_DEVICE_SRC_DIR}/supla/channels/binary_sensor_channel.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/channels/channel_extended.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/io.cpp
+  ${SUPLA_DEVICE_SRC_DIR}/supla/io/io_pin.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/tools.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/element.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/local_action.cpp
@@ -73,6 +74,7 @@ set(SUPLA_DEVICE_SRCS
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/html_generator.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/web_server.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/web_sender.cpp
+  ${SUPLA_DEVICE_SRC_DIR}/supla/network/html_output_buffer.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/netif_wifi.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/netif_lan.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/network/html/device_info.cpp
@@ -126,6 +128,7 @@ set(SUPLA_DEVICE_SRCS
   ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/protocol_layer.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/supla_srpc.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/mqtt.cpp
+  ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/mqtt/hvac_mqtt.cpp
   ${SUPLA_DEVICE_SRC_DIR}/supla/protocol/mqtt_topic.cpp
 
   ${SUPLA_DEVICE_SRC_DIR}/supla/control/action_trigger.cpp

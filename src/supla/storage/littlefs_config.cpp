@@ -24,10 +24,10 @@
 #include "littlefs_config.h"
 
 #include <LittleFS.h>
+#include <stdio.h>
 #include <string.h>
 #include <supla/log_wrapper.h>
 #include <supla/storage/key_value.h>
-#include <stdio.h>
 
 namespace Supla {
 const char ConfigFileName[] = "/supla-dev.cfg";
@@ -45,6 +45,9 @@ Supla::LittleFsConfig::~LittleFsConfig() {
 }
 
 bool Supla::LittleFsConfig::init() {
+  SUPLA_LOG_WARNING(
+      "LittleFsConfig: config stored without encryption (LittleFS). "
+      "Device is not protected against physical access.");
   if (first) {
     SUPLA_LOG_WARNING(
         "LittleFsConfig: init called on non empty database. Aborting");
@@ -131,7 +134,6 @@ void Supla::LittleFsConfig::commit() {
   }
 
   auto files = {ConfigFileName, BackupConfigFileName};
-  bool result = false;
 
   for (auto file : files) {
     SUPLA_LOG_DEBUG("LittleFsConfig: writing to file \"%s\"", file);
@@ -344,7 +346,7 @@ bool Supla::LittleFsConfig::getBlob(const char* key,
 
   file.close();
   LittleFS.end();
-  return bytesRead == fileSize;
+  return (bytesRead < 0) ? false : static_cast<size_t>(bytesRead) == fileSize;
 }
 
 int Supla::LittleFsConfig::getBlobSize(const char* key) {

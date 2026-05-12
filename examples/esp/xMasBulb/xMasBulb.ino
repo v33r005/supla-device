@@ -25,6 +25,7 @@
 
 #include <SuplaDevice.h>
 #include <supla/network/esp_wifi.h>
+#include <supla/network/network.h>
 #include <supla/device/status_led.h>
 #include <supla/storage/littlefs_config.h>
 #include <supla/version.h>
@@ -49,12 +50,25 @@ Supla::Device::StatusLed statusLed(STATUS_LED_GPIO, true); // inverted state
 auto XMasGenerator = new xMasHtmlGenerator;
 Supla::EspWebServer suplaServer(XMasGenerator);
 
+static bool localWebServerStarted = false;
+
+static void ensureLocalWebServerStarted() {
+  if (!localWebServerStarted && Supla::Network::IsReady()) {
+    // Debug/DIY only: this exposes the local config web UI on the operational
+    // network without authentication. Do not use in real deployed devices.
+    suplaServer.start();
+    localWebServerStarted = true;
+  }
+}
+
 void setup() {
   Serial.begin(115200);
 
   new Supla::Html::DeviceInfo(&SuplaDevice);
   new Supla::Html::WifiParameters;
   new Supla::Html::ProtocolParameters;
+  // Debug/DIY only: ButtonUpdate exposes an unauthenticated OTA endpoint.
+  // Do not use it on real devices or untrusted networks.
   new Supla::Html::ButtonUpdate(&suplaServer);
 
   // WS2812b LEDs strip
@@ -90,10 +104,10 @@ void setup() {
   SuplaDevice.setName(DEV_NAME);
   SuplaDevice.setSwVersion(DEV_VERSION);
   SuplaDevice.setInitialMode(Supla::InitialMode::StartInCfgMode);
-  SuplaDevice.setPermanentWebInterface();
   SuplaDevice.begin();
 }
 
 void loop() {
   SuplaDevice.iterate();
+  ensureLocalWebServerStarted();
 }

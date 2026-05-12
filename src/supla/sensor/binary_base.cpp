@@ -53,7 +53,7 @@ void BinaryBase::onLoadConfig(SuplaDeviceClass *sdc) {
     setServerInvertLogic(storedServerInvertLogic > 0, false);
 
     if (config.filteringTimeMs > 0 || config.timeoutDs > 0 ||
-        config.sensitivity > 0) {
+        config.sensitivity > 0 || config.alarmMuted > 0) {
       generateKey(key, Supla::ConfigTag::BinarySensorCfgTag);
       BinarySensorConfig storedConfig = {};
       cfg->getBlob(key,
@@ -77,6 +77,12 @@ void BinaryBase::onLoadConfig(SuplaDeviceClass *sdc) {
           setSensitivity(storedConfig.sensitivity, false);
         }
       }
+
+      if (config.alarmMuted > 0) {
+        if (storedConfig.alarmMuted > 0) {
+          setAlarmMuted(storedConfig.alarmMuted, false);
+        }
+      }
     }
 
     printConfig();
@@ -86,12 +92,13 @@ void BinaryBase::onLoadConfig(SuplaDeviceClass *sdc) {
 void BinaryBase::printConfig() {
   SUPLA_LOG_INFO(
       "Binary[%d] config serverInvertLogic %d, timeoutDs %d, filteringTimeMs "
-      "%d, sensitivity %d",
+      "%d, sensitivity %d, alarmMuted %d",
       getChannelNumber(),
       channel.isServerInvertLogic(),
       config.timeoutDs,
       config.filteringTimeMs,
-      config.sensitivity);
+      config.sensitivity,
+      config.alarmMuted);
 }
 
 void BinaryBase::purgeConfig() {
@@ -127,12 +134,13 @@ Supla::ApplyConfigResult BinaryBase::applyChannelConfig(
       reinterpret_cast<TChannelConfig_BinarySensor *>(newConfig->Config);
 
   SUPLA_LOG_DEBUG("Binary[%d] received serverInvertLogic %d, timeoutDs %d, "
-                  "filteringTimeMs %d, sensitivity %d",
+                  "filteringTimeMs %d, sensitivity %d, alarmMuted %d",
                   getChannelNumber(),
                   serverConfig->InvertedLogic,
                   serverConfig->Timeout,
                   serverConfig->FilteringTimeMs,
-                  serverConfig->Sensitivity);
+                  serverConfig->Sensitivity,
+                  serverConfig->AlarmMuted);
 
   bool configChanged = false;
 
@@ -159,6 +167,13 @@ Supla::ApplyConfigResult BinaryBase::applyChannelConfig(
     result = Supla::ApplyConfigResult::SetChannelConfigNeeded;
   } else {
     if (setSensitivity(serverConfig->Sensitivity, false)) {
+      configChanged = true;
+    }
+  }
+  if (getAlarmMuted() > 0 && serverConfig->AlarmMuted == 0) {
+    result = Supla::ApplyConfigResult::SetChannelConfigNeeded;
+  } else {
+    if (setAlarmMuted(serverConfig->AlarmMuted, false)) {
       configChanged = true;
     }
   }
@@ -212,6 +227,23 @@ bool BinaryBase::setSensitivity(uint8_t sensitivity, bool local) {
 
 uint8_t BinaryBase::getSensitivity() const {
   return config.sensitivity;
+}
+
+bool BinaryBase::setAlarmMuted(uint8_t alarmMuted, bool local) {
+  if (alarmMuted == config.alarmMuted ||
+      (config.alarmMuted > 0 && alarmMuted == 0) || alarmMuted > 2) {
+    return false;
+  }
+  config.alarmMuted = alarmMuted;
+  if (local) {
+    triggerSetChannelConfig(SUPLA_CONFIG_TYPE_DEFAULT);
+    saveConfig();
+  }
+  return true;
+}
+
+uint8_t BinaryBase::getAlarmMuted() const {
+  return config.alarmMuted;
 }
 
 bool BinaryBase::setFilteringTimeMs(uint16_t filteringTimeMs, bool local) {
@@ -284,6 +316,9 @@ void BinaryBase::fillChannelConfig(void *channelConfig,
   if (config.sensitivity > 0) {
     serverConfig->Sensitivity = config.sensitivity;
   }
+  if (config.alarmMuted > 0) {
+    serverConfig->AlarmMuted = config.alarmMuted;
+  }
   if (config.timeoutDs > 0) {
     serverConfig->Timeout = config.timeoutDs;
   }
@@ -321,4 +356,3 @@ void BinaryBase::saveConfig() {
     proto->notifyConfigChange(getChannelNumber());
   }
 }
-

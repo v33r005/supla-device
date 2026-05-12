@@ -162,7 +162,6 @@ class LightingPwmBase : public ChannelElement, public ActionHandler {
   void setBrightnessAdjuster(BrightnessAdjuster *adjuster);
   int getCurrentDimmerBrightness() const;
   int getCurrentRGBBrightness() const;
-  void setMaxHwValue(int newMaxHwValue);
 
   /**
    * Sets minimum PWM frequency.
@@ -194,6 +193,21 @@ class LightingPwmBase : public ChannelElement, public ActionHandler {
   void setPwmFrequency(uint16_t pwmFrequency);
 
   /**
+   * Applies the same PWM frequency validation as setPwmFrequency().
+   *
+   * @param pwmFrequency [Hz]
+   * @param minPwmFrequency minimum allowed frequency [Hz]
+   * @param maxPwmFrequency maximum allowed frequency [Hz]
+   * @param stepPwmFrequency step between allowed frequencies [Hz]
+   *
+   * @return corrected PWM frequency [Hz]
+   */
+  static uint16_t normalizePwmFrequency(uint16_t pwmFrequency,
+                                        uint16_t minPwmFrequency,
+                                        uint16_t maxPwmFrequency,
+                                        uint16_t stepPwmFrequency);
+
+  /**
    * Sets PWM frequency step.
    * This will only set class member. Actual usage of PWM frequency settings
    * depends on RGBCCT object implementation.
@@ -201,6 +215,13 @@ class LightingPwmBase : public ChannelElement, public ActionHandler {
    * @param stepPwmFrequency [Hz]
    */
   void setStepPwmFrequency(uint16_t stepPwmFrequency);
+
+  /**
+   * Sets PWM resolution bits and updates the remembered hardware max value.
+   *
+   * This value is owned by the lighting instance and later applied to outputs.
+   */
+  void setPwmResolutionBits(uint8_t pwmResolutionBits);
 
   /**
    * Returns minimum PWM frequency
@@ -231,6 +252,11 @@ class LightingPwmBase : public ChannelElement, public ActionHandler {
   uint16_t getStepPwmFrequency() const;
 
   /**
+   * Returns current PWM resolution bits remembered by this lighting instance.
+   */
+  uint8_t getPwmResolutionBits() const;
+
+  /**
    * Checks if this instance has parent
    *
    * @return true if this instance has parent
@@ -255,6 +281,8 @@ class LightingPwmBase : public ChannelElement, public ActionHandler {
    *         proper operation of it's function
    */
   int getMissingGpioCount() const;
+
+  void setMaxHwValue(int newMaxHwValue);
 
   void enableChannel();
   void disableChannel();
@@ -337,7 +365,6 @@ class LightingPwmBase : public ChannelElement, public ActionHandler {
   enum ButtonControlType buttonControlType = BUTTON_FOR_RGBW;
   enum AutoIterateMode autoIterateMode = AutoIterateMode::OFF;
 
-  uint16_t maxHwValue = 1023;
   float minBrightnessRatio = 0.0f;
   float maxBrightnessRatio = 1.0f;
   float minColorBrightnessRatio = 0.0f;
@@ -350,6 +377,9 @@ class LightingPwmBase : public ChannelElement, public ActionHandler {
   uint16_t maxPwmFrequency = 9000;
   uint16_t pwmFrequency = 500;
   uint16_t stepPwmFrequency = 1;
+
+  uint16_t maxHwValue = 1023;
+  uint8_t pwmResolutionBits = 10;
 
   uint32_t previousChannelFunction = 0;
 

@@ -203,6 +203,7 @@ class WebSender {
                               const char* label,
                               bool selected,
                               bool emptyValue = false);
+  virtual void sendCsrfField();
   virtual void sendHidden(bool hidden);
   virtual void sendReadonly(bool readonly);
   virtual void sendDisabled(bool disabled);

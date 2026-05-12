@@ -37,6 +37,8 @@ TEST(DimmerLedsTests, SettingNewDimValue) {
   SimpleTime time;
   DigitalInterfaceMock ioMock;
 
+  EXPECT_CALL(ioMock, analogWriteResolution(1, 10)).Times(1);
+  EXPECT_CALL(ioMock, analogWriteFrequency(1, 1000)).Times(1);
   EXPECT_CALL(ioMock, pinMode(1, OUTPUT));
   EXPECT_CALL(ioMock, analogWrite(1, 0)).Times(1);
 
@@ -95,7 +97,7 @@ TEST(DimmerLedsTests, IoPinConstructorUsesSeparateIoForBrightness) {
   SimpleTime time;
   SuplaIoMock brightnessIo;
 
-  EXPECT_CALL(brightnessIo, customSetPwmResolutionBits(10));
+  EXPECT_CALL(brightnessIo, customSetPwmResolutionBits(7, 10));
   EXPECT_CALL(brightnessIo, customSetPwmFrequency(1000));
   EXPECT_CALL(brightnessIo, customConfigureAnalogOutput(-1, 7, false));
   EXPECT_CALL(brightnessIo, customPinMode(-1, 7, OUTPUT));

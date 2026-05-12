@@ -40,7 +40,7 @@ class StorageMock: public Supla::Storage {
   void defaultInitialization(int elementStateSize = 0);
 };
 
-#define STORAGE_SIMULATOR_SIZE 50000
+#define STORAGE_SIMULATOR_SIZE 0x90000
 
 class StorageMockSimulator: public Supla::Storage {
  public:

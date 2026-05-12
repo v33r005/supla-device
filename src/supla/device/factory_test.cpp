@@ -217,16 +217,18 @@ void FactoryTest::onInit() {
       return;
     }
   }
-  if (webServer && !webServer->verifyCertificatesFormat()) {
+  if (webServer && !webServer->verifyEmbeddedHttpsCertificates()) {
     if (ensureAdvancedSecurity) {
-      SUPLA_LOG_ERROR("TEST failed: invalid certificates format");
+      SUPLA_LOG_ERROR("TEST failed: missing or invalid HTTPS certificates");
       testFailed = true;
       failReason = 18;
       if (!selfTestMode) {
         return;
       }
     } else {
-      SUPLA_LOG_WARNING("TEST skip failed check: invalid certificates format");
+      SUPLA_LOG_WARNING(
+          "TEST skip failed check: missing or invalid HTTPS "
+          "certificates");
     }
   }
 

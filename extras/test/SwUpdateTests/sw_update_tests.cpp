@@ -49,7 +49,7 @@ class SwUpdateTests : public ::testing::Test {
   SuplaDeviceClass sd;
   BoardMock board;
   NetworkClientMock *client = nullptr;
-  ConfigMock cfg;
+  ::testing::NiceMock<ConfigMock> cfg;
   SwUpdateMock swUpdate;
 
   virtual void SetUp() {
@@ -61,6 +61,7 @@ class SwUpdateTests : public ::testing::Test {
     Supla::Channel::resetToDefaults();
     EXPECT_CALL(cfg, init()).WillOnce(Return(true));
     EXPECT_CALL(cfg, isConfigModeSupported()).WillRepeatedly(Return(true));
+    EXPECT_CALL(cfg, isSwUpdateSkipCert()).WillRepeatedly(Return(false));
     EXPECT_CALL(net, isWifiConfigRequired()).WillRepeatedly(Return(true));
   }
 
@@ -325,6 +326,10 @@ TEST_F(SwUpdateTests, FirmwareCheckAndNormalUpdate) {
   Supla::messageReceived(nullptr, 0, 0, srpcLayer, 28);
   moveTime(10);
 
+  // A stale recovery-mode flag must not disable certificate validation for
+  // cloud-triggered firmware updates.
+  EXPECT_CALL(cfg, isSwUpdateSkipCert()).WillRepeatedly(Return(true));
+
   // authorized and supported, start update, new version not available
   EXPECT_CALL(srpc, srpc_getdata(_, _, _))
       .WillOnce([&calcfgRequest](
@@ -356,6 +361,7 @@ TEST_F(SwUpdateTests, FirmwareCheckAndNormalUpdate) {
       .WillOnce([this]() {
         swUpdate.setNewVersion("1.2.3");
         EXPECT_FALSE(swUpdate.isSecurityOnly());
+        EXPECT_FALSE(swUpdate.isSkipCertOnFacade());
         swUpdate.setFinished();
       });
 
@@ -841,11 +847,16 @@ TEST_F(SwUpdateTests, AutomaticUpdateTriggeredInternallySecurityOnly) {
 //  EXPECT_CALL(cfg, setSwUpdateBeta(false)).Times(1);
   EXPECT_CALL(cfg, commit()).Times(AtLeast(1));
 
+  // A stale recovery-mode flag must not disable certificate validation for
+  // periodic automatic OTA checks.
+  EXPECT_CALL(cfg, isSwUpdateSkipCert()).WillRepeatedly(Return(true));
+
   EXPECT_CALL(swUpdate, iterate())
       .WillOnce([this]() {
         swUpdate.setNewVersion("1.2.3");
         swUpdate.setFinished();
         EXPECT_TRUE(swUpdate.isSecurityOnlyOnFacade());
+        EXPECT_FALSE(swUpdate.isSkipCertOnFacade());
       });
   moveTime(5);
   time.advance(Supla::AutomaticOtaCheckInterval);

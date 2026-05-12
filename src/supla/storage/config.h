@@ -66,6 +66,7 @@ class Config {
   virtual bool isMinimalConfigReady(bool showLogs = true);
   virtual bool isConfigModeSupported();
   virtual bool isEncryptionEnabled();
+  virtual bool isDeviceDataPartitionAvailable();
 
   // Override this method and setup all default value if needed
   virtual void initDefaultDeviceConfig();
@@ -114,8 +115,10 @@ class Config {
   virtual bool setCustomCA(const char* customCA);
   virtual bool getAESKey(uint8_t* result);
 
+#ifndef ARDUINO_ARCH_AVR
   static void generateSaltPassword(const char* password,
                                    Supla::SaltPassword* result);
+#endif
   virtual bool setCfgModeSaltPassword(const Supla::SaltPassword& saltPassword);
   virtual bool getCfgModeSaltPassword(Supla::SaltPassword* result);
 

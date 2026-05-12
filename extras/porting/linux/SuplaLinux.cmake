@@ -8,7 +8,7 @@ find_package(yaml-cpp REQUIRED)
 FetchContent_Declare(
   json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG v3.11.3
+  GIT_TAG v3.12.0
   GIT_SHALLOW TRUE
 )
 
@@ -93,6 +93,7 @@ set(SUPLA_DEVICE_LINUX_SRCS
   ${SUPLA_LINUX_PORT_DIR}/supla/control/control_payload.cpp
 
   ${_SUPLA_ROOT_FROM_LINUX}/src/supla/pv/fronius.cpp
+  ${_SUPLA_ROOT_FROM_LINUX}/src/supla/pv/solaredge.cpp
   ${_SUPLA_ROOT_FROM_LINUX}/src/supla/pv/afore.cpp
 
   ${_SUPLA_ROOT_FROM_LINUX}/src/supla-common/tools.c
@@ -125,4 +126,3 @@ function(supla_linux target_name)
     ${CMAKE_DL_LIBS}
   )
 endfunction()
-

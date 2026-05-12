@@ -42,8 +42,12 @@ struct CalCfgResultPendingItem;
 class CalCfgResultPending {
  public:
   friend class SuplaSrpc;
-  void set(int16_t channelNo, int32_t receiverId, int32_t command);
+  void set(int16_t channelNo,
+           int32_t receiverId,
+           int32_t command,
+           uint32_t timeoutMs = 0);
   void clear(int16_t channelNo, int32_t command = -1);
+  void clearAll();
   CalCfgResultPendingItem *get(int16_t channelNo, int32_t command = -1);
 
  protected:
@@ -173,6 +177,7 @@ class SuplaSrpc : public ProtocolLayer {
   Supla::Device::ChannelConflictResolver *channelConflictResolver = nullptr;
 
  private:
+  void handlePendingCalCfgTimeouts(uint32_t _millis);
   Supla::Device::RemoteDeviceConfig *remoteDeviceConfig = nullptr;
 };
 }  // namespace Protocol

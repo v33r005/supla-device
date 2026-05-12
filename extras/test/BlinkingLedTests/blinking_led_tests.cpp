@@ -27,6 +27,7 @@ TEST(BlinkingLedTests, IoPinConstructorUsesSeparateIoAndOutputPolarity) {
   SuplaIoMock io;
   TimeInterfaceMock timeMock;
   TimeInterface::instance = &timeMock;
+  EXPECT_CALL(timeMock, millis()).WillRepeatedly(Return(0));
 
   ::testing::InSequence seq;
   EXPECT_CALL(io, customDigitalWrite(-1, 7, LOW)).Times(1);
@@ -40,6 +41,7 @@ TEST(BlinkingLedTests, IoPinConstructorSupportsInputPolarityForLegacyInvert) {
   SuplaIoMock io;
   TimeInterfaceMock timeMock;
   TimeInterface::instance = &timeMock;
+  EXPECT_CALL(timeMock, millis()).WillRepeatedly(Return(0));
 
   ::testing::InSequence seq;
   EXPECT_CALL(io, customDigitalWrite(-1, 7, HIGH)).Times(1);

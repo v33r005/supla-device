@@ -16,6 +16,8 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
+#ifndef ARDUINO_ARCH_AVR
+
 #include "key_value.h"
 
 #include <string.h>
@@ -613,3 +615,5 @@ bool KeyValue::eraseKey(const char* key) {
 }
 
 };  // namespace Supla
+
+#endif  // !defined(ARDUINO_ARCH_AVR)

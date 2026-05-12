@@ -127,6 +127,7 @@ void ProtocolParameters::send(Supla::WebSender* sender) {
                   "Custom CA (paste here CA certificate in PEM format)");
               auto textarea = sender->tag("textarea");
               textarea.attr("name", "custom_ca")
+                  .attr("id", "custom_ca")
                   .attr("maxlength", 4000)
                   .close();
               char* bufCert = new char[4000];
@@ -206,6 +207,7 @@ void ProtocolParameters::send(Supla::WebSender* sender) {
                     "Custom CA (paste here CA certificate in PEM format)");
                 auto textarea = sender->tag("textarea");
                 textarea.attr("name", "custom_ca")
+                    .attr("id", "custom_ca")
                     .attr("maxlength", 4000)
                     .close();
                 char* bufCert = new char[4000];

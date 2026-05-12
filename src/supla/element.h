@@ -256,6 +256,13 @@ class Element {
    */
   virtual int handleCalcfgFromServer(TSD_DeviceCalCfgRequest *request);
 
+  /**
+   * Returns timeout in milliseconds for CALCFG requests that become pending.
+   * Zero means no timeout.
+   */
+  virtual uint32_t getCalcfgPendingTimeoutMs(
+      TSD_DeviceCalCfgRequest *request) const;
+
   // Returns SUPLA_RESULTCODE_
   /**
    * Handles "set channel config" request from server

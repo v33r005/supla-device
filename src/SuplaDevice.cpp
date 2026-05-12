@@ -295,7 +295,8 @@ bool SuplaDeviceClass::begin(unsigned char protoVersion) {
 
   if (auto webServer = Supla::WebServer::Instance()) {
     webServer->setSuplaDeviceClass(this);
-    if (webServer->verifyCertificatesFormat()) {
+    if (webServer->resolveWebServerMode() ==
+        Supla::WebServer::WebServerMode::HttpsOnly) {
       // web password is used only when https is used
       SUPLA_LOG_DEBUG("SD: add flag CALCFG_SET_CFG_MODE_PASSWORD_SUPPORTED");
       addFlags(SUPLA_DEVICE_FLAG_CALCFG_SET_CFG_MODE_PASSWORD_SUPPORTED);
@@ -598,6 +599,7 @@ void SuplaDeviceClass::iterate(void) {
         deviceMode = Supla::DEVICE_MODE_NORMAL;
         if (cfg) {
           cfg->setDeviceMode(Supla::DEVICE_MODE_NORMAL);
+          cfg->setSwUpdateSkipCert(false);
           cfg->setSwUpdateBeta(false);
           cfg->commit();
         }
@@ -678,7 +680,11 @@ bool SuplaDeviceClass::initSwUpdateInstance(Supla::SwUpdateMode mode,
     if (cfg->isSwUpdateBeta()) {
       swUpdate->useBeta();
     }
-    if (cfg->isSwUpdateSkipCert()) {
+    if (deviceMode == Supla::DEVICE_MODE_SW_UPDATE &&
+        cfg->isSwUpdateSkipCert()) {
+      // Recovery-only fallback for a locally requested SW update.
+      // Automatic and remotely triggered OTA checks must keep certificate
+      // verification enabled even if an old recovery flag remains in storage.
       swUpdate->setSkipCert();
     }
   }
@@ -746,6 +752,11 @@ void SuplaDeviceClass::iterateSwUpdate() {
       //      }
     } else if (swUpdate->isFinished()) {
       SUPLA_LOG_INFO("Finished SW update, restarting...");
+      auto cfg = Supla::Storage::ConfigInstance();
+      if (cfg) {
+        cfg->setSwUpdateSkipCert(false);
+        cfg->commit();
+      }
       delete swUpdate;
       swUpdate = nullptr;
       scheduleSoftRestart();
@@ -842,9 +853,7 @@ bool SuplaDeviceClass::loadDeviceConfig() {
       if (cfg->getAuthKey(buf)) {
         setAuthKey(buf);
       }
-      generateHexString(
-          Supla::RegisterDevice::getAuthKey(), buf, SUPLA_AUTHKEY_SIZE);
-      SUPLA_LOG_DEBUG("New AuthKey: %s", buf);
+      SUPLA_LOG_DEBUG("New AuthKey generated");
       cfg->initDefaultDeviceConfig();
     } else {
       SUPLA_LOG_ERROR("Failed to generate GUID and AuthKey");
@@ -931,18 +940,6 @@ void SuplaDeviceClass::iterateAlwaysElements(uint32_t _millis) {
   // Iterate all elements and saves state
   if (Supla::Storage::SaveStateAllowed(_millis)) {
     saveStateToStorage();
-  }
-
-  // check the startup of the permanent web server
-  if (startPermanentWebInterface) {
-    if (!runningPermanentWebInterface) {
-      if (Supla::Network::IsReady()) {
-        if (Supla::WebServer::Instance() != nullptr) {
-          Supla::WebServer::Instance()->start();
-          runningPermanentWebInterface = true;
-        }
-      }
-    }
   }
 }
 
@@ -1295,8 +1292,12 @@ int SuplaDeviceClass::handleCalcfgFromServer(TSD_DeviceCalCfgRequest *request,
               "Password change failed: password is not strong enough");
           return SUPLA_CALCFG_RESULT_FALSE;
         }
+#ifndef ARDUINO_ARCH_AVR
         Supla::Config::generateSaltPassword(password->NewPassword,
                                             &saltPassword);
+#else
+        return SUPLA_CALCFG_RESULT_NOT_SUPPORTED;
+#endif
         cfg->setCfgModeSaltPassword(saltPassword);
         addSecurityLog(Supla::SecurityLogSource::REMOTE,
                        "Password successfully changed");
@@ -1803,15 +1804,6 @@ void SuplaDeviceClass::setProtoVerboseLog(bool value) {
   createSrpcLayerIfNeeded();
   if (srpcLayer) {
     srpcLayer->setVerboseLog(value);
-  }
-}
-
-void SuplaDeviceClass::setPermanentWebInterface(bool value) {
-  startPermanentWebInterface = value;
-
-  if (!value && runningPermanentWebInterface) {
-    Supla::WebServer::Instance()->stop();
-    runningPermanentWebInterface = false;
   }
 }
 

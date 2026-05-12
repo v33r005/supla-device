@@ -88,6 +88,7 @@
 using ::testing::_;
 using ::testing::EndsWith;
 using ::testing::HasSubstr;
+using ::testing::Not;
 using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::StartsWith;
@@ -162,10 +163,11 @@ class PwmFrequencyStub : public Supla::Control::LightingPwmBase {
 class BinarySensorStub : public Supla::Sensor::BinaryBase {
  public:
   BinarySensorStub() {
-    setServerInvertLogic(true, true);
-    setFilteringTimeMs(2500, true);
-    setTimeoutDs(42, true);
-    setSensitivity(12, true);
+    setServerInvertLogic(true, false);
+    setFilteringTimeMs(2500, false);
+    setTimeoutDs(42, false);
+    setSensitivity(12, false);
+    setAlarmMuted(2, false);
   }
 
   bool getValue() override {
@@ -631,6 +633,7 @@ TEST_F(HtmlCaptureTest, SwUpdateBetaRendersSelectedState) {
 
   EXPECT_CALL(cfg, getDeviceMode())
       .WillOnce(Return(Supla::DEVICE_MODE_SW_UPDATE));
+  EXPECT_CALL(cfg, isSwUpdateSkipCert()).WillOnce(Return(false));
   EXPECT_CALL(cfg, isSwUpdateBeta()).WillOnce(Return(true));
   EXPECT_CALL(cfg, init()).WillOnce(Return(false));
   EXPECT_CALL(sender, send(_, _))
@@ -643,13 +646,23 @@ TEST_F(HtmlCaptureTest, SwUpdateBetaRendersSelectedState) {
   EXPECT_EQ(sendHtml,
             "<div class=\"form-field\">"
             "<label for=\"updbeta\">Firmware update</label>"
-            "<select name=\"updbeta\" id=\"updbeta\">"
+            "<div><select name=\"updbeta\" id=\"updbeta\">"
             "<option value=\"0\">NO</option>"
             "<option value=\"1\">YES</option>"
             "<option value=\"2\" selected>YES - BETA</option>"
+            "<option value=\"3\">YES - ONE-TIME RECOVERY MODE (SKIP "
+            "CERTIFICATE)</option>"
             "</select>"
-            "<div class=\"hint\">Warning: beta SW versions may contain bugs "
-            "and your device may not work properly.</div>"
+            "<div class=\"hint\">NO: keep firmware update disabled.</div>"
+            "<div class=\"hint\">YES: normal OTA update with HTTPS "
+            "certificate verification.</div>"
+            "<div class=\"hint\">YES - BETA: install beta firmware. Beta "
+            "versions may contain bugs and your device may not work properly."
+            "</div>"
+            "<div class=\"hint\">YES - ONE-TIME RECOVERY MODE: use only when "
+            "the OTA certificate has expired. This mode is cleared "
+            "automatically after the update.</div>"
+            "</div>"
             "</div>");
 }
 
@@ -683,11 +696,6 @@ TEST_F(HtmlCaptureTest, SwUpdateRendersSimpleFirmwareSelector) {
   sendHtml.clear();
 
   EXPECT_CALL(cfg, getDeviceMode()).WillOnce(Return(Supla::DEVICE_MODE_NORMAL));
-  EXPECT_CALL(cfg, getInt8(StrEq("swUpdNoCert"), _))
-      .WillOnce([](const char*, int8_t* value) {
-        *value = 0;
-        return true;
-      });
   EXPECT_CALL(cfg, init()).WillOnce(Return(false));
   EXPECT_CALL(sender, send(_, _))
       .WillRepeatedly(
@@ -700,9 +708,7 @@ TEST_F(HtmlCaptureTest, SwUpdateRendersSimpleFirmwareSelector) {
               HasSubstr("<label for=\"upd\">Firmware update</label>"));
   EXPECT_THAT(sendHtml, HasSubstr("<option value=\"0\" selected>NO</option>"));
   EXPECT_THAT(sendHtml, HasSubstr("<option value=\"1\">YES</option>"));
-  EXPECT_THAT(sendHtml,
-              HasSubstr("<option value=\"2\">YES - SKIP CERTIFICATE "
-                        "(dangerous)</option>"));
+  EXPECT_THAT(sendHtml, Not(HasSubstr("SKIP CERTIFICATE")));
   EXPECT_THAT(sendHtml, HasSubstr("<select "));
 }
 
@@ -978,6 +984,11 @@ TEST_F(HtmlCaptureTest, PwmFrequencyParametersRendersDefaultRange) {
             "</div>");
 }
 
+TEST_F(HtmlCaptureTest, PwmFrequencyParametersHandlesResponseWithoutRgbCct) {
+  Supla::Html::PwmFrequencyParameters param(nullptr);
+  EXPECT_TRUE(param.handleResponse(Supla::ConfigTag::PwmFrequencyTag, "2345"));
+}
+
 TEST_F(HtmlCaptureTest, RgbwButtonParametersRendersDefaultOptions) {
   ConfigMock cfg;
   SenderMock sender;
@@ -1069,6 +1080,25 @@ TEST_F(HtmlCaptureTest, BinarySensorParametersRendersFields) {
   EXPECT_THAT(sendHtml, HasSubstr("Filtering time [s]"));
   EXPECT_THAT(sendHtml, HasSubstr("Sensor timeout [s]"));
   EXPECT_THAT(sendHtml, HasSubstr("Sensor sensitivity [%]"));
+  EXPECT_THAT(sendHtml, HasSubstr("Alarm muted"));
+  EXPECT_THAT(sendHtml, HasSubstr("Muted"));
+  EXPECT_THAT(sendHtml, HasSubstr("Not muted"));
+}
+
+TEST_F(HtmlCaptureTest, BinarySensorParametersHandleResponseStoresAlarmMuted) {
+  NiceMock<ConfigMock> cfg;
+  Supla::Channel::resetToDefaults();
+  BinarySensorStub binary;
+
+  Supla::Html::BinarySensorParameters param(&binary);
+
+  char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+  Supla::Config::generateKey(key, binary.getChannelNumber(), "bs_alarm");
+
+  EXPECT_TRUE(param.handleResponse(key, "1"));
+  EXPECT_EQ(binary.getAlarmMuted(), 1);
+
+  param.onProcessingEnd();
 }
 
 TEST_F(HtmlCaptureTest, ScreenDelayTypeParametersRendersSelectedOption) {
@@ -1317,6 +1347,40 @@ TEST_F(HtmlCaptureTest, HvacParametersRendersBasicThermostatFields) {
   EXPECT_THAT(sendHtml, HasSubstr("Cooling temperature setpoint [°C]"));
   EXPECT_THAT(sendHtml, HasSubstr("value=\"21.0\""));
   EXPECT_THAT(sendHtml, HasSubstr("value=\"25.0\""));
+}
+
+TEST_F(HtmlCaptureTest, HvacParametersUsesUniqueAuxSectionIdsPerChannel) {
+  NiceMock<ConfigMock> cfg;
+  SenderMock sender;
+  OutputSimulatorWithCheck output1;
+  OutputSimulatorWithCheck output2;
+  sendHtml.clear();
+
+  EXPECT_CALL(sender, send(_, _))
+      .WillRepeatedly(
+          [this](const char* data, int size) { appendSentHtml(data, size); });
+
+  Supla::Control::HvacBase hvac1(&output1);
+  Supla::Control::HvacBase hvac2(&output2);
+
+  Supla::Html::HvacParameters param1(&hvac1);
+  Supla::Html::HvacParameters param2(&hvac2);
+
+  param1.send(&sender);
+  param2.send(&sender);
+
+  EXPECT_THAT(sendHtml, HasSubstr("id=\"0_aux_box\""));
+  EXPECT_THAT(sendHtml, HasSubstr("id=\"1_aux_box\""));
+  EXPECT_THAT(sendHtml, HasSubstr("function auxSetpointEnabledChange_0()"));
+  EXPECT_THAT(sendHtml, HasSubstr("function auxSetpointEnabledChange_1()"));
+  EXPECT_THAT(sendHtml, HasSubstr("id=\"0_af_box\""));
+  EXPECT_THAT(sendHtml, HasSubstr("id=\"1_af_box\""));
+  EXPECT_THAT(
+      sendHtml,
+      HasSubstr("function antiFreezeAndHeatProtectionChange_0()"));
+  EXPECT_THAT(
+      sendHtml,
+      HasSubstr("function antiFreezeAndHeatProtectionChange_1()"));
 }
 
 TEST_F(HtmlCaptureTest, ContainerParametersRendersBasicFields) {

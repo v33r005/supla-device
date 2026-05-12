@@ -1,3 +1,19 @@
+---
+kind: secret
+name: rocket_url
+data: GktdRvYSwOXxbfpUh/RGs633F89D3jFKasxpCYoPLIRmOVcBIhGcjzdn5CUojxivOrk5Kw==
+
+---
+kind: secret
+name: rocket_user
+data: dnghPG3TK2wMqtnJHC8jvqeuZr1+3CTOjDKAis8LT+JILU0audAzd36A6kVJ
+
+---
+kind: secret
+name: rocket_token
+data: bOaE6BiCcjm06co0/ZHoPPYQDO+itvxSjSvmzczHUEiZieKqIjqRuy+rAjheSrXmrM2yTX0Cf/Vlecg+5vXp2nIEfDdddoc=
+
+---
 kind: pipeline
 name: default
 
@@ -26,6 +42,7 @@ steps:
   pull: never
   commands:
   - cd extras/test/build
+  - ulimit -n 8192
   - valgrind --error-exitcode=1 --leak-check=full ./supladevicetests
   - valgrind --error-exitcode=1 --leak-check=full ./sd4linuxtests
   depends_on:
@@ -69,7 +86,7 @@ steps:
   image: stable/esp-idf
   pull: never
   depends_on:
-    - esp_idf_setup
+    - esp_idf_compilation_check
   commands:
   - export SUPLA_DEVICE_PATH=/drone/src
   - cd extras/examples/esp_idf/
@@ -119,6 +136,7 @@ steps:
   - arduino-cli compile --fqbn esp8266:esp8266:generic --optimize-for-debug --export-binaries --warnings all ./Fronius/
   - arduino-cli compile --fqbn esp8266:esp8266:generic --optimize-for-debug --export-binaries --warnings all ./GarageParkingAssistLight/
   - arduino-cli compile --fqbn esp8266:esp8266:generic --optimize-for-debug --export-binaries --warnings all ./HX711_Weight_sensor/
+  - arduino-cli compile --fqbn esp8266:esp8266:generic --optimize-for-debug --export-binaries --warnings all ./SimpleRelay/
 
 - name: arduino_esp8266_compilation_check_part_2
   image: devel/arduino-cli
@@ -205,6 +223,7 @@ steps:
   - arduino-cli compile --fqbn esp32:esp32:esp32wrover --optimize-for-debug --build-path /drone/arduino_cache  --board-options PartitionScheme=huge_app --export-binaries --warnings all ./DHT/
   - arduino-cli compile --fqbn esp32:esp32:esp32wrover --optimize-for-debug --build-path /drone/arduino_cache  --board-options PartitionScheme=huge_app --export-binaries --warnings all ./Fronius/
   - arduino-cli compile --fqbn esp32:esp32:esp32wrover --optimize-for-debug --build-path /drone/arduino_cache  --board-options PartitionScheme=huge_app --export-binaries --warnings all ./HX711_Weight_sensor/
+  - arduino-cli compile --fqbn esp32:esp32:esp32wrover --optimize-for-debug --build-path /drone/arduino_cache  --board-options PartitionScheme=huge_app --export-binaries --warnings all ./SimpleRelay/
 
 - name: arduino_esp32_compilation_check_part_5
   image: devel/arduino-cli
@@ -271,7 +290,7 @@ steps:
     url:
       from_secret: rocket_url
     user_id:
-      from_secret: rocket_user_id
+      from_secret: rocket_user
     token:
       from_secret: rocket_token
     channel: github

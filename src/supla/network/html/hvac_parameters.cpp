@@ -25,6 +25,7 @@
 #include <supla/control/hvac_base.h>
 #include <supla/log_wrapper.h>
 #include <supla/network/web_sender.h>
+#include <supla/storage/config.h>
 #include <supla/storage/storage.h>
 #include <supla/tools.h>
 
@@ -143,6 +144,10 @@ void HvacParameters::send(Supla::WebSender* sender) {
 
   char tmp[100] = {};
   snprintf(tmp, sizeof(tmp), "Thermostat #%d", hvac->getChannelNumber());
+  char auxSettingsKey[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+  hvac->generateKey(auxSettingsKey, "aux_box");
+  char antiFreezeSettingsKey[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+  hvac->generateKey(antiFreezeSettingsKey, "af_box");
 
   sender->send("</div><div class=\"box\">");
   sender->tag("h3").body(tmp);
@@ -392,21 +397,32 @@ void HvacParameters::send(Supla::WebSender* sender) {
 
   if (!hvac->parameterFlags.AuxMinMaxSetpointEnabledHidden) {
     hvac->generateKey(key, "aux_ctrl");
+    char auxChangeFn[48] = {};
+    snprintf(auxChangeFn,
+             sizeof(auxChangeFn),
+             "auxSetpointEnabledChange_%d",
+             hvac->getChannelNumber());
     emitSwitchField(sender,
                     key,
                     "Enable auxiliary min. and max. setpoints",
                     hvac->isAuxMinMaxSetpointEnabled(),
                     hvac->parameterFlags.AuxMinMaxSetpointEnabledReadonly,
-                    "auxSetpointEnabledChange();");
+                    auxChangeFn);
 
     sender->send(
         "<script>"
-        "function auxSetpointEnabledChange(){"
+        "function ");
+    sender->send(auxChangeFn);
+    sender->send(
+        "(){"
         "var e=document.getElementById(\"");
     sender->send(key);
     sender->send(
         "\"),"
-        "c=document.getElementById(\"aux_settings\"),"
+        "c=document.getElementById(\"");
+    sender->send(auxSettingsKey);
+    sender->send(
+        "\"),"
         "l=e.checked?\"block\":\"none\";"
         "c.style.display=l;}"
         "</script>");
@@ -415,7 +431,7 @@ void HvacParameters::send(Supla::WebSender* sender) {
   if (!hvac->parameterFlags.TemperaturesAuxMinSetpointHidden ||
       !hvac->parameterFlags.TemperaturesAuxMaxSetpointHidden) {
     sender->toggleBox(
-        "aux_settings", hvac->isAuxMinMaxSetpointEnabled(), [&]() {
+        auxSettingsKey, hvac->isAuxMinMaxSetpointEnabled(), [&]() {
           if (!hvac->parameterFlags.TemperaturesAuxMinSetpointHidden) {
             hvac->generateKey(key, "t_aux_min");
             emitNumberField(
@@ -441,22 +457,33 @@ void HvacParameters::send(Supla::WebSender* sender) {
   if (!hvac->parameterFlags.AntiFreezeAndOverheatProtectionEnabledHidden) {
     sender->tag("h2").body("Anti freeze and overheat protection");
     hvac->generateKey(key, "anti_freeze");
+    char antiFreezeChangeFn[48] = {};
+    snprintf(antiFreezeChangeFn,
+             sizeof(antiFreezeChangeFn),
+             "antiFreezeAndHeatProtectionChange_%d",
+             hvac->getChannelNumber());
     emitSwitchField(
         sender,
         key,
         "Enable anti-freeze and overheat protection",
         hvac->isAntiFreezeAndHeatProtectionEnabled(),
         hvac->parameterFlags.AntiFreezeAndOverheatProtectionEnabledReadonly,
-        "antiFreezeAndHeatProtectionChange();");
+        antiFreezeChangeFn);
 
     sender->send(
         "<script>"
-        "function antiFreezeAndHeatProtectionChange(){"
+        "function ");
+    sender->send(antiFreezeChangeFn);
+    sender->send(
+        "(){"
         "var e=document.getElementById(\"");
     sender->send(key);
     sender->send(
         "\"),"
-        "c=document.getElementById(\"antifreeze_settings\"),"
+        "c=document.getElementById(\"");
+    sender->send(antiFreezeSettingsKey);
+    sender->send(
+        "\"),"
         "l=e.checked?\"block\":\"none\";"
         "c.style.display=l;}"
         "</script>");
@@ -465,7 +492,7 @@ void HvacParameters::send(Supla::WebSender* sender) {
   if (!hvac->parameterFlags.TemperaturesFreezeProtectionHidden ||
       !hvac->parameterFlags.TemperaturesHeatProtectionHidden) {
     sender->toggleBox(
-        "antifreeze_settings",
+        antiFreezeSettingsKey,
         hvac->isAntiFreezeAndHeatProtectionEnabled(),
         [&]() {
           if (!hvac->parameterFlags.TemperaturesFreezeProtectionHidden) {

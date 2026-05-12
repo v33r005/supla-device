@@ -77,6 +77,7 @@ class ConfigMock : public Supla::Config {
   MOCK_METHOD(enum Supla::DeviceMode, getDeviceMode, (), (override));
   MOCK_METHOD(bool, getGUID, (char* result), (override));
   MOCK_METHOD(bool, getSwUpdateServer, (char* url), (override));
+  MOCK_METHOD(bool, isSwUpdateSkipCert, (), (override));
   MOCK_METHOD(bool, isSwUpdateBeta, (), (override));
   MOCK_METHOD(bool, setSwUpdateServer, (const char* url), (override));
   MOCK_METHOD(bool, setSwUpdateBeta, (bool enabled), (override));

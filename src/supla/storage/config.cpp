@@ -145,7 +145,7 @@ bool Config::getSuplaServer(char* result) {
 int32_t Config::getSuplaServerPort() {
   int32_t result = -1;
   getInt32("suplaport", &result);
-  if (result <= 0 || result > 65536) {
+  if (result <= 0 || result > 65535) {
     result = -1;
   }
 
@@ -175,7 +175,7 @@ bool Config::getAESKey(uint8_t*) {
 int32_t Config::getMqttServerPort() {
   int32_t result = -1;
   getInt32("mqttport", &result);
-  if (result <= 0 || result > 65536) {
+  if (result <= 0 || result > 65535) {
     if (isMqttTlsEnabled()) {
       result = 8883;
     } else {
@@ -276,7 +276,7 @@ bool Config::setSuplaServer(const char* server) {
 }
 
 bool Config::setSuplaServerPort(int32_t port) {
-  if (port <= 0 || port > 65536) {
+  if (port <= 0 || port > 65535) {
     port = 2016;
   }
   return setInt32("suplaport", port);
@@ -305,7 +305,7 @@ bool Config::setMqttServer(const char* server) {
 }
 
 bool Config::setMqttServerPort(int32_t port) {
-  if (port <= 0 || port > 65536) {
+  if (port <= 0 || port > 65535) {
     port = 1883;
   }
   return setInt32("mqttport", port);
@@ -586,6 +586,7 @@ bool Config::isChannelConfigChangeFlagSet(int channelNo, int configType) {
   return false;
 }
 
+#ifndef ARDUINO_ARCH_AVR
 void Config::generateSaltPassword(const char* password,
                                   Supla::SaltPassword *result) {
   if (password == nullptr || result == nullptr) {
@@ -604,6 +605,7 @@ void Config::generateSaltPassword(const char* password,
                               result->passwordSha,
                               sizeof(result->passwordSha));
 }
+#endif  // !ARDUINO_ARCH_AVR
 
 bool Config::setCfgModeSaltPassword(const Supla::SaltPassword &saltPassword) {
   return setBlob("cfgpass", reinterpret_cast<const char*>(&saltPassword),
@@ -687,6 +689,10 @@ void Supla::Config::setAutoUpdatePolicy(Supla::AutoUpdatePolicy policy) {
 }
 
 bool Supla::Config::isEncryptionEnabled() {
+  return false;
+}
+
+bool Supla::Config::isDeviceDataPartitionAvailable() {
   return false;
 }
 

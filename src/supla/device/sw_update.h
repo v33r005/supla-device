@@ -52,6 +52,8 @@ class SwUpdate {
     beta = true;
   }
   void setSkipCert() {
+    // One-time recovery fallback for expired OTA certificates.
+    // The OTA flow clears this mode after use.
     skipCert = true;
   }
   bool isRetryAllowed() {

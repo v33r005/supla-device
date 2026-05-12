@@ -41,6 +41,7 @@
 #include <supla/payload/simple.h>
 #include <supla/pv/afore.h>
 #include <supla/pv/fronius.h>
+#include <supla/pv/solaredge.h>
 #include <supla/sensor/binary_parsed.h>
 #include <supla/sensor/container_parsed.h>
 #include <supla/sensor/distance_parsed.h>
@@ -59,15 +60,14 @@
 #include <supla/source/mqtt_src.h>
 #include <supla/source/source.h>
 #include <supla/tools.h>
+#include <SuplaDevice.h>
 
 #include <algorithm>
 #include <cmath>
-#include <chrono>  // NOLINT(build/c++11)
 #include <cstring>
 #include <filesystem>  // NOLINT(build/c++17)
 #include <fstream>
 #include <map>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -254,19 +254,8 @@ bool Supla::LinuxYamlConfig::generateGuidAndAuthkey() {
   char guid[SUPLA_GUID_SIZE] = {};
   char authkey[SUPLA_AUTHKEY_SIZE] = {};
 
-  unsigned int randSeed = static_cast<unsigned int>(
-      std::chrono::system_clock::now().time_since_epoch().count());
-
-  std::mt19937 randGen(randSeed);
-  std::uniform_int_distribution<unsigned char> distribution(0, 255);
-
-  for (int i = 0; i < SUPLA_GUID_SIZE; i++) {
-    guid[i] = static_cast<char>(distribution(randGen));
-  }
-
-  for (int i = 0; i < SUPLA_AUTHKEY_SIZE; i++) {
-    authkey[i] = distribution(randGen);
-  }
+  Supla::fillRandom(reinterpret_cast<uint8_t *>(guid), SUPLA_GUID_SIZE);
+  Supla::fillRandom(reinterpret_cast<uint8_t *>(authkey), SUPLA_AUTHKEY_SIZE);
 
   if (isArrayEmpty(guid, SUPLA_GUID_SIZE)) {
     SUPLA_LOG_ERROR("Failed to generate GUID");
@@ -424,8 +413,7 @@ bool Supla::LinuxYamlConfig::setGUID(const char* guidRaw) {
 
 bool Supla::LinuxYamlConfig::getGUID(char* result) {
   if (guid.length()) {
-    hexStringToArray(guid.c_str(), result, SUPLA_GUID_SIZE);
-    return true;
+    return hexStringToArray(guid.c_str(), result, SUPLA_GUID_SIZE);
   }
   return false;
 }
@@ -439,8 +427,7 @@ bool Supla::LinuxYamlConfig::setAuthKey(const char* authkeyRaw) {
 
 bool Supla::LinuxYamlConfig::getAuthKey(char* result) {
   if (authkey.length()) {
-    hexStringToArray(authkey.c_str(), result, SUPLA_AUTHKEY_SIZE);
-    return true;
+    return hexStringToArray(authkey.c_str(), result, SUPLA_AUTHKEY_SIZE);
   }
   return false;
 }
@@ -665,6 +652,8 @@ bool Supla::LinuxYamlConfig::parseChannel(const YAML::Node& ch,
       return addRgbCctParsed(ch, channelNumber, parser);
     } else if (type == "Fronius") {
       return addFronius(ch, channelNumber);
+    } else if (type == "SolarEdge") {
+      return addSolarEdge(ch, channelNumber);
     } else if (type == "Afore") {
       return addAfore(ch, channelNumber);
     } else if (type == "Hvac") {
@@ -992,6 +981,13 @@ bool Supla::LinuxYamlConfig::addFronius(const YAML::Node& ch,
   if (ch["device_type"]) {
     paramCount++;
     deviceType = ch["device_type"].as<int>();
+    if (!Supla::PV::Fronius::isDeviceTypeSupported(deviceType)) {
+      SUPLA_LOG_ERROR(
+          "Channel[%d] config: unsupported Fronius device_type: %d",
+          channelNumber,
+          deviceType);
+      return false;
+    }
   }
 
   if (ch["ip"]) {  // mandatory
@@ -1014,6 +1010,64 @@ bool Supla::LinuxYamlConfig::addFronius(const YAML::Node& ch,
   }
 
   return true;
+}
+
+bool Supla::LinuxYamlConfig::addSolarEdge(const YAML::Node& ch,
+                                          int channelNumber) {
+  std::string apiKey;
+  std::string siteId;
+  std::string inverterSerialNumber;
+
+  if (ch["api_key"]) {
+    paramCount++;
+    apiKey = ch["api_key"].as<std::string>();
+  } else {
+    SUPLA_LOG_ERROR(
+        "Channel[%d] config: missing mandatory \"api_key\" parameter",
+        channelNumber);
+    return false;
+  }
+
+  if (ch["site_id"]) {
+    paramCount++;
+    siteId = ch["site_id"].as<std::string>();
+  } else {
+    SUPLA_LOG_ERROR(
+        "Channel[%d] config: missing mandatory \"site_id\" parameter",
+        channelNumber);
+    return false;
+  }
+
+  if (ch["inverter_serial_number"]) {
+    paramCount++;
+    inverterSerialNumber = ch["inverter_serial_number"].as<std::string>();
+  } else {
+    SUPLA_LOG_ERROR("Channel[%d] config: missing mandatory "
+                    "\"inverter_serial_number\" parameter",
+                    channelNumber);
+    return false;
+  }
+
+  auto clock = SuplaDevice.getClock();
+  if (!clock) {
+    SUPLA_LOG_ERROR(
+        "Channel[%d] config: SolarEdge requires a configured clock",
+        channelNumber);
+    return false;
+  }
+
+  SUPLA_LOG_INFO(
+      "Channel[%d] config: adding SolarEdge with site_id %s, inverter "
+      "serial %s",
+      channelNumber,
+      siteId.c_str(),
+      inverterSerialNumber.c_str());
+
+  auto solarEdge = new Supla::PV::SolarEdge(apiKey.c_str(),
+                                            siteId.c_str(),
+                                            inverterSerialNumber.c_str(),
+                                            clock);
+  return addCommonParameters(ch, solarEdge);
 }
 
 bool Supla::LinuxYamlConfig::addAfore(const YAML::Node& ch, int channelNumber) {

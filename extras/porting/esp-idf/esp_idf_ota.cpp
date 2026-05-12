@@ -22,9 +22,11 @@
 #include <esp_idf_ota.h>
 #include <esp_ota_ops.h>
 #include <esp_task_wdt.h>
+#include <mbedtls/x509.h>
 #include <stdio.h>
 #include <supla-common/log.h>
 #include <supla/device/register_device.h>
+#include <supla/device/supla_ca_cert.h>
 #include <supla/log_wrapper.h>
 #include <supla/rsa_verificator.h>
 #include <supla/sha256.h>
@@ -36,6 +38,71 @@
 #include "supla/device/sw_update.h"
 
 #define BUFFER_SIZE 4096
+
+namespace {
+
+constexpr size_t UPDATE_URL_REWRITE_BUFFER_SIZE = 256;
+
+const char *rewriteUpdateHost(const char *url,
+                              char *buffer,
+                              size_t bufferSize) {
+  if (url == nullptr || buffer == nullptr || bufferSize == 0) {
+    return url;
+  }
+
+  static const char oldHost[] = "https://updates.supla.org";
+  static const char newHost[] = "https://iot.updates.supla.org";
+  size_t oldHostLen = sizeof(oldHost) - 1;
+
+  if (strncmp(url, oldHost, oldHostLen) != 0) {
+    return url;
+  }
+
+  int written = snprintf(buffer, bufferSize, "%s%s", newHost, url + oldHostLen);
+  if (written < 0 || static_cast<size_t>(written) >= bufferSize) {
+    SUPLA_LOG_WARNING("SW update: failed to rewrite update host");
+    return url;
+  }
+
+  return buffer;
+}
+
+}  // namespace
+
+static void formatHttpClientError(const char *prefix,
+                                  esp_http_client_handle_t client,
+                                  char *buf,
+                                  size_t bufLen) {
+  if (buf == nullptr || bufLen == 0 || client == nullptr || prefix == nullptr) {
+    return;
+  }
+
+  int errnoCode = esp_http_client_get_errno(client);
+  int tlsCode = 0;
+  int tlsFlags = 0;
+  esp_err_t tlsErr =
+      esp_http_client_get_and_clear_last_tls_error(client, &tlsCode, &tlsFlags);
+  (void)tlsErr;
+
+  if (tlsFlags != 0 || tlsCode == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED ||
+      tlsCode == -MBEDTLS_ERR_X509_CERT_VERIFY_FAILED) {
+    snprintf(buf,
+             bufLen,
+             "%s: certificate verification failed, flags=0x%x",
+             prefix,
+             tlsFlags);
+    return;
+  }
+  int errorCode = errnoCode != 0 ? errnoCode : tlsCode;
+  if (errorCode < 0) {
+    errorCode = -errorCode;
+  }
+  if (errorCode == 0) {
+    errorCode = 1;
+  }
+
+  snprintf(buf, bufLen, "%s: Error %d", prefix, errorCode);
+}
 
 #ifndef SUPLA_DEVICE_ESP32
 // ESP8266 RTOS doesn't have OTA_WITH_SEQUENTIAL_WRITES, so we replace it with
@@ -216,9 +283,10 @@ void Supla::EspIdfOta::iterate() {
   configCheckUpdate.url = url;
   configCheckUpdate.timeout_ms = 5000;
   configCheckUpdate.user_agent = httpAgent;
-  if (!skipCert && sdc && sdc->getSuplaCACert()) {
-    SUPLA_LOG_INFO("SW update: using Supla CA cert");
-    configCheckUpdate.cert_pem = sdc->getSuplaCACert();
+  if (!skipCert) {
+    configCheckUpdate.cert_pem = ::suplaCACert;
+  } else {
+    SUPLA_LOG_WARNING("SW update: skip checking Supla CA cert (INSECURE)");
   }
 
   if (client) {
@@ -291,7 +359,7 @@ void Supla::EspIdfOta::iterate() {
   if (cJSON_IsString(status) && (status->valuestring != NULL)) {
     snprintf(buf, BUF_SIZE, "SW update status: %s", status->valuestring);
     SUPLA_LOG_INFO("%s", buf);
-//    log(buf);
+    //    log(buf);
   }
 
   esp_http_client_cleanup(client);
@@ -302,6 +370,9 @@ void Supla::EspIdfOta::iterate() {
     cJSON *url = cJSON_GetObjectItemCaseSensitive(latestUpdate, "updateUrl");
     if (cJSON_IsString(version) && (version->valuestring != NULL) &&
         cJSON_IsString(url) && (url->valuestring != NULL)) {
+      char rewrittenUrl[UPDATE_URL_REWRITE_BUFFER_SIZE] = {};
+      const char *effectiveUrl = rewriteUpdateHost(
+          url->valuestring, rewrittenUrl, sizeof(rewrittenUrl));
       if (mode == Supla::SwUpdateMode::PeriodicCheckAndUpdate) {
         mode = Supla::SwUpdateMode::CheckAndUpdate;
       }
@@ -309,7 +380,7 @@ void Supla::EspIdfOta::iterate() {
           buf, BUF_SIZE, "SW update new version: %s", version->valuestring);
       SUPLA_LOG_INFO("%s", buf);
       log(buf);
-      snprintf(buf, BUF_SIZE, "SW update url: \"%s\"", url->valuestring);
+      snprintf(buf, BUF_SIZE, "SW update url: \"%s\"", effectiveUrl);
       SUPLA_LOG_INFO("%s", buf);
       log(buf);
 
@@ -327,29 +398,34 @@ void Supla::EspIdfOta::iterate() {
       if (updateUrl) {
         delete[] updateUrl;
       }
-      int urlLen = strlen(url->valuestring) + 1;
+      int urlLen = strlen(effectiveUrl) + 1;
       updateUrl = new char[urlLen];
       if (updateUrl == nullptr) {
         fail("SW update: failed to allocate memory");
         cJSON_Delete(json);
         return;
       }
-      snprintf(updateUrl, urlLen, "%s", url->valuestring);
+      snprintf(updateUrl, urlLen, "%s", effectiveUrl);
 
       // copy changelogUrl parameter (if available)
       cJSON *changelogUrlJson =
           cJSON_GetObjectItemCaseSensitive(latestUpdate, "changelogUrl");
       if (cJSON_IsString(changelogUrlJson) &&
           (changelogUrlJson->valuestring != NULL)) {
+        char rewrittenChangelogUrl[UPDATE_URL_REWRITE_BUFFER_SIZE] = {};
+        const char *effectiveChangelogUrl =
+            rewriteUpdateHost(changelogUrlJson->valuestring,
+                              rewrittenChangelogUrl,
+                              sizeof(rewrittenChangelogUrl));
         if (changelogUrl) {
           delete[] changelogUrl;
         }
 
-        int urlLen = strlen(changelogUrlJson->valuestring) + 1;
+        int urlLen = strlen(effectiveChangelogUrl) + 1;
         if (urlLen < SUPLA_URL_PATH_MAXSIZE) {
           changelogUrl = new char[urlLen];
           if (changelogUrl) {
-            snprintf(changelogUrl, urlLen, "%s", changelogUrlJson->valuestring);
+            snprintf(changelogUrl, urlLen, "%s", effectiveChangelogUrl);
           }
         } else {
           SUPLA_LOG_WARNING("SW update: changelogUrl too long, skipping");
@@ -385,37 +461,48 @@ void Supla::EspIdfOta::iterate() {
   configGet.url = updateUrl;
   configGet.timeout_ms = 10000;
   configGet.user_agent = httpAgent;
-  if (!skipCert && sdc && sdc->getSuplaCACert()) {
-    SUPLA_LOG_INFO("SW update: using Supla CA cert");
-    configCheckUpdate.cert_pem = sdc->getSuplaCACert();
+  if (!skipCert) {
+    configGet.cert_pem = ::suplaCACert;
+  } else {
+    SUPLA_LOG_WARNING("SW update: skip checking Supla CA cert (INSECURE)");
   }
   client = esp_http_client_init(&configGet);
   if (client == NULL) {
     retryAllowed = true;
-    fail("SW update: failed initialize GET connection with update server");
+    fail("SW update: connection init with update server failed");
     return;
   }
   esp_http_client_set_method(client, HTTP_METHOD_GET);
   err = esp_http_client_open(client, 0);
   if (err != ESP_OK) {
+    char failReason[256] = {};
+    formatHttpClientError("SW update: failed to open HTTPS connection",
+                          client,
+                          failReason,
+                          sizeof(failReason));
     retryAllowed = true;
-    fail("SW update: failed to open HTTP connection");
+    fail(failReason);
     return;
   }
   err = esp_http_client_fetch_headers(client);
   if (err < 0) {
+    char failReason[256] = {};
+    formatHttpClientError("SW update: failed to read file from url",
+                          client,
+                          failReason,
+                          sizeof(failReason));
     retryAllowed = true;
-    fail("SW update: failed to read file from url");
+    fail(failReason);
     SUPLA_LOG_DEBUG("SW update: result %d", err);
     return;
   }
 
   int returnCode = esp_http_client_get_status_code(client);
-  SUPLA_LOG_INFO("HTTP return code %d", returnCode);
+  SUPLA_LOG_INFO("HTTPS return code %d", returnCode);
   if (returnCode != 200) {
     snprintf(buf,
              BUF_SIZE,
-             "SW update: HTTP GET failed with status code %d",
+             "SW update: HTTPS GET failed with status code %d",
              returnCode);
     retryAllowed = true;
     fail(buf);

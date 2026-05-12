@@ -30,6 +30,7 @@
 // using ::testing::AtLeast;
 
 #define SMALL_FLASH_SIZE (5*4096)
+#define BIG_FLASH_SIZE 0x80000
 
 TEST(StorageStateWlSectorTests, preambleInitializationSizeIsZero) {
   EXPECT_FALSE(Supla::Storage::Init());
@@ -449,3 +450,187 @@ TEST(StorageStateWlSectorTests, preambleReadFromBackupInvalidSize) {
   EXPECT_EQ(el2.stateValue, 20);
 }
 
+TEST(StorageStateWlSectorTests,
+     crashWhileLatestSectorSlotIsCorruptedShouldRecoverPreviousSlot) {
+  EXPECT_FALSE(Supla::Storage::Init());
+
+  ElementWithStorage el;
+  el.stateValue = 123456;
+
+  StorageMockFlashSimulator storage(
+      0, SMALL_FLASH_SIZE, Supla::Storage::WearLevelingMode::SECTOR_WRITE_MODE);
+
+  EXPECT_CALL(storage, commit()).Times(0);
+
+  EXPECT_TRUE(storage.isEmpty());
+
+  Supla::Preamble preamble = {};
+  memcpy(preamble.suplaTag, "SUPLA", 5);
+  preamble.version = 1;
+  preamble.sectionsCount = 1;
+  memcpy(storage.storageSimulatorData, &preamble, sizeof(preamble));
+
+  Supla::SectionPreamble sectionPreamble = {
+      STORAGE_SECTION_TYPE_ELEMENT_STATE_WL_SECTOR, SMALL_FLASH_SIZE, 0, 0};
+  memcpy(storage.storageSimulatorData + sizeof(Supla::Preamble),
+         &sectionPreamble,
+         sizeof(sectionPreamble));
+
+  Supla::StateWlSectorConfig sectorConfig = {};
+  sectorConfig.stateSlotSize = sizeof(el.stateValue) +
+      sizeof(Supla::StateWlSectorHeader);
+  sectorConfig.crc = calculateCrc16(
+      reinterpret_cast<unsigned char *>(&sectorConfig.stateSlotSize),
+      sizeof(sectorConfig.stateSlotSize));
+  memcpy(storage.storageSimulatorData + sizeof(Supla::Preamble) +
+             sizeof(Supla::SectionPreamble),
+         &sectorConfig,
+         sizeof(sectorConfig));
+
+  // Bitmap value 0xFE means that slot #1 is the current slot.
+  // Slot #0 contains the previous valid value, slot #1 simulates a torn write.
+  storage.storageSimulatorData[sizeof(Supla::Preamble) +
+                               sizeof(Supla::SectionPreamble) +
+                               sizeof(Supla::StateWlSectorConfig)] = 0xFE;
+
+  const uint32_t firstSlotAddress = 2 * 4096;
+  const uint32_t slotSize = sectorConfig.stateSlotSize;
+  const uint32_t previousSlotAddress = firstSlotAddress;
+  const uint32_t currentSlotAddress = firstSlotAddress + slotSize;
+
+  Supla::StateWlSectorHeader slotHeader = {};
+  slotHeader.crc = calculateCrc16(
+      reinterpret_cast<unsigned char *>(&el.stateValue),
+      sizeof(el.stateValue));
+  memcpy(storage.storageSimulatorData + previousSlotAddress,
+         &slotHeader,
+         sizeof(slotHeader));
+  memcpy(storage.storageSimulatorData + previousSlotAddress +
+             sizeof(slotHeader),
+         &el.stateValue,
+         sizeof(el.stateValue));
+
+  // Simulate a crash or torn write: the latest slot is present in metadata,
+  // but its payload is erased.
+  memset(storage.storageSimulatorData + currentSlotAddress,
+         0xFF,
+         slotSize);
+
+  EXPECT_TRUE(Supla::Storage::Init());
+
+  el.stateValue = 0;
+  Supla::Storage::LoadStateStorage();
+
+  // After the fix, crash-safe sector WL should fall back to the previous valid
+  // slot instead of loading the torn latest slot.
+  EXPECT_EQ(el.stateValue, 123456);
+}
+
+TEST(StorageStateWlSectorTests,
+     crashAfterSlotWriteBeforeBitmapUpdateShouldRecoverWrittenSlot) {
+  EXPECT_FALSE(Supla::Storage::Init());
+
+  ElementWithStorage el;
+  el.stateValue = 123456;
+
+  StorageMockFlashSimulator storage(
+      0, SMALL_FLASH_SIZE, Supla::Storage::WearLevelingMode::SECTOR_WRITE_MODE);
+
+  EXPECT_CALL(storage, commit()).Times(0);
+
+  EXPECT_TRUE(storage.isEmpty());
+  EXPECT_TRUE(Supla::Storage::Init());
+
+  EXPECT_FALSE(Supla::Storage::IsStateStorageValid());
+  Supla::Storage::WriteStateStorage();
+
+  auto sectorConfig = storage.getStateWlSectorConfig();
+  const uint32_t slotSize = sectorConfig->stateSlotSize;
+  EXPECT_EQ(slotSize, sizeof(el.stateValue) +
+      sizeof(Supla::StateWlSectorHeader));
+
+  const uint32_t bitmapOffset = sizeof(Supla::Preamble) +
+      sizeof(Supla::SectionPreamble) +
+      sizeof(Supla::StateWlSectorConfig);
+  EXPECT_EQ(storage.storageSimulatorData[bitmapOffset], 0xFF);
+
+  const uint32_t firstSlotAddress = 2 * 4096;
+  const uint32_t writtenSlotAddress = firstSlotAddress;
+  Supla::StateWlSectorHeader writtenSlotHeader = {};
+  memcpy(&writtenSlotHeader,
+         storage.storageSimulatorData + writtenSlotAddress,
+         sizeof(writtenSlotHeader));
+  EXPECT_EQ(writtenSlotHeader.crc,
+            calculateCrc16(
+                reinterpret_cast<unsigned char *>(&el.stateValue),
+                sizeof(el.stateValue)));
+
+  // Simulate reset after writing the first slot and sector config. There is no
+  // bitmap bit to store for slot #0, so erased bitmap must still load it.
+  storage.storageSimulatorData[bitmapOffset] = 0xFF;
+
+  const uint32_t backupSectorOffset = 4096;
+  Supla::StateWlSectorConfig initialSectorConfig = {};
+  initialSectorConfig.stateSlotSize = 0xFFFF;
+  initialSectorConfig.crc = 0xFFFF;
+  memcpy(storage.storageSimulatorData + backupSectorOffset +
+             sizeof(Supla::Preamble) + sizeof(Supla::SectionPreamble),
+         &initialSectorConfig,
+         sizeof(initialSectorConfig));
+  storage.storageSimulatorData[backupSectorOffset + bitmapOffset] = 0xFF;
+
+  Supla::Storage::storageInitDone = false;
+  EXPECT_TRUE(Supla::Storage::Init());
+  EXPECT_TRUE(Supla::Storage::IsStateStorageValid());
+
+  el.stateValue = 0;
+  Supla::Storage::LoadStateStorage();
+
+  EXPECT_EQ(el.stateValue, 123456);
+}
+
+TEST(StorageStateWlSectorTests, bigSizedStorageShouldNotOverflowBitmap) {
+  EXPECT_FALSE(Supla::Storage::Init());
+
+  ElementWithStorage el1;
+  ElementWithStorage el2;
+
+  StorageMockFlashSimulator storage(
+      0, BIG_FLASH_SIZE, Supla::Storage::WearLevelingMode::SECTOR_WRITE_MODE);
+
+  EXPECT_CALL(storage, commit()).Times(0);
+
+  EXPECT_TRUE(storage.isEmpty());
+  EXPECT_TRUE(Supla::Storage::Init());
+
+  EXPECT_FALSE(Supla::Storage::IsStateStorageValid());
+  Supla::Storage::WriteStateStorage();
+
+  auto sectorConfig = storage.getStateWlSectorConfig();
+  EXPECT_EQ(sectorConfig->stateSlotSize,
+            2 + 2 * sizeof(el1.stateValue));
+
+  const uint32_t bitmapOffset = sizeof(Supla::Preamble) +
+      sizeof(Supla::SectionPreamble) +
+      sizeof(Supla::StateWlSectorConfig);
+  const int bitmapBytesBeforeBackupSection =
+      4096 - bitmapOffset;
+  const int firstSlotOverlappingBackupSection =
+      bitmapBytesBeforeBackupSection * 8;
+  for (int i = 1; i <= firstSlotOverlappingBackupSection; i++) {
+    el1.stateValue = i;
+    el2.stateValue = i + 1;
+    Supla::Storage::WriteStateStorage();
+  }
+
+  Supla::Storage::storageInitDone = false;
+  EXPECT_TRUE(Supla::Storage::Init());
+  EXPECT_TRUE(Supla::Storage::IsStateStorageValid());
+
+  el1.stateValue = 0;
+  el2.stateValue = 0;
+  Supla::Storage::LoadStateStorage();
+
+  EXPECT_EQ(el1.stateValue, firstSlotOverlappingBackupSection);
+  EXPECT_EQ(el2.stateValue, firstSlotOverlappingBackupSection + 1);
+}
